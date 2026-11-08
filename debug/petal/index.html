@@ -31,7 +31,7 @@
 
   // ---- shaders: dùng đúng file của trang chính ----
   const all = await (await fetch('/shaders.glsl')).text();
-  const re = /^[ \t]*\/\/[ \t]*-+[ \t]*(\w+)/gm;
+  const re = /^[ \t]*\/\/[ \t]*-{3,}[ \t]*([A-Z][A-Z0-9_]*)/gm;
   const marks = []; let m;
   while ((m = re.exec(all)) !== null) marks.push({ key: m[1], start: all.indexOf('\n', m.index) + 1 });
   const shaders = {};

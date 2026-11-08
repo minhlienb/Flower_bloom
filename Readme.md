@@ -41,10 +41,18 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
   **Shift** khi kéo để chỉ trượt dọc trục; slider `w0/t1/t2/AXIS_ANG/N/M`.
   Chế độ **Bụp (18 cánh)** chạy theo **bloom v3** — nở = duỗi cong, **không còn `uOpen`**: mỗi cánh mang
   độ mở riêng (`iOpen`), nụ hình thành bằng `curl` (cung bảo toàn độ dài) + `wrap` + `tilt` (dựng cánh
-  quanh trục tiếp tuyến) + `base` (vành đế); nút **Nở/Khép** chạy 18 lò xo tới hạn (ζ=1, không nảy),
-  lớp ngoài trước, lệch nhịp theo seed. Slider `open` là kéo tay để so silhouette nụ ↔ nở.
+  quanh trục tiếp tuyến) + `base` (vành đế); nút **Nở/Khép** chạy 18 lò xo **có quán tính**
+  (`ζ = 0.55`, `τ = 1/ω = 0.28 s`, cánh ngoài nặng hơn 12%): bung **quá 1.0** (~+12%) rồi nảy lại
+  (~−1.5%) và lắng về đúng P0; lớp ngoài trước, lệch nhịp theo seed. Slider `open` là kéo tay để so silhouette nụ ↔ nở.
   Panel "Xuất ra main.js" in lại hằng số để paste; `window.petal` = `{ Q, W, AXIS, P, BUD, LAYERS, state, view, built, insts, U, rebuild, scrubOpen, bloomTo }`.
   Nên chạy qua HTTP (`python -m http.server`); mở `file://` vẫn chỉnh được nhưng dùng material thay cho shader.
+- `debug/timeline/` — **timeline cho motion nở**: cùng setup với `petal_bud` (Q · `w0=0` · N/M · curl/wrap/tilt/base ·
+  τ/ζ/stagger), nhưng motion được **mô phỏng trước ở 240 Hz** rồi scrub. Tab **Timeline**: 3 lane (lớp ngoài, lớp trong,
+  cánh đang chọn) + playhead, kéo để scrub, `Space` play/pause, `←/→` ±1 frame, `⏮`/`↻`/tốc độ 0.25–2×. Tab **Curve**:
+  đồ thị `open(t)` 18 cánh + marker `vượt đích` / `nảy lại` / `lắng`, đường P0 = 1.0. Panel sửa τ, ζ, lệch lớp/seed,
+  "nặng lớp ngoài", curl/wrap/tilt/base, s lớp; đổi số là mô phỏng lại ngay. `window.timeline` = `{ insts, curves, stats,
+  allSettled, state, setTime, setPlay, recompute }`.
+- `debug/bloom_v3.glsl` — VERT v3 dùng chung cho `petal_bud` và `timeline` (nguồn duy nhất để bê vào `shaders.glsl`).
 
 
 ## TODO

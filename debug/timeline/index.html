@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bloom timeline — Fleur debug</title>
+<style>
+:root{ --ink:#eae5f3; --dim:rgba(234,229,243,.46); --line:rgba(234,229,243,.14);
+       --hot:#f6aa0e; --outer:#ff6b7d; --inner:#8e9bff; }
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;color:var(--ink);background:#0a0a12;
+  font:400 12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+body{display:grid;grid-template-columns:1fr 306px;grid-template-rows:1fr 254px;height:100%}
+#view{grid-area:1/1;position:relative;min-width:0;min-height:0;touch-action:none;cursor:grab}
+#view.grabbing{cursor:grabbing}
+#view canvas{display:block;width:100%;height:100%}
+#view .no3d{display:grid;place-items:center;height:100%;padding:24px;color:var(--dim);text-align:center}
+#panel{grid-area:1/2;overflow:auto;padding:12px 12px 20px;background:rgba(9,9,16,.9);
+  border-left:1px solid var(--line)}
+#dock{grid-area:2/1/3/3;border-top:1px solid var(--line);background:rgba(9,9,16,.92);
+  display:grid;grid-template-rows:36px minmax(0,1fr);min-height:0;overflow:hidden}
+#dockbar{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line)}
+#dockcv{display:block;width:100%;height:100%;min-width:0;min-height:0;cursor:ew-resize}
+.tabs{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.tabs button{padding:4px 10px;border:0;background:transparent;color:var(--dim);cursor:pointer;
+  font:400 11px ui-monospace,Menlo,monospace}
+.tabs button.on{background:rgba(142,86,234,.24);color:var(--ink)}
+#dockbar .sp{flex:1}
+#dockbar button{min-width:30px;padding:4px 8px;border:1px solid var(--line);border-radius:3px;
+  background:transparent;color:var(--ink);cursor:pointer;font:400 11px ui-monospace,Menlo,monospace}
+#dockbar button:hover{background:rgba(142,86,234,.16)}
+#dockbar button.on{background:rgba(142,86,234,.24);border-color:rgba(142,86,234,.5)}
+#clock{font-variant-numeric:tabular-nums;color:var(--hot);font-size:11.5px;min-width:86px}
+#panel h1{margin:0 0 2px;font:400 13px/1.3 'Cormorant Garamond',Georgia,serif;font-style:italic}
+#panel h1 span{font:300 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;
+  color:var(--dim);margin-left:8px}
+#panel .sub{margin:0 0 10px;color:var(--dim);font-size:10px;line-height:1.5}
+#panel code{color:#b9c3ff}
+.grp{border-top:1px solid var(--line);padding:9px 0 3px}
+.grp h2{margin:0 0 7px;font:300 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.3em;
+  text-transform:uppercase;color:var(--dim)}
+.row{display:grid;grid-template-columns:96px 1fr 46px;align-items:center;gap:8px;margin:0 0 4px}
+.row>span{color:rgba(234,229,243,.72);font-size:10.5px}
+.row>b{font-weight:400;text-align:right;color:var(--hot);font-size:10.5px;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:ew-resize}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(234,229,243,.18)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;margin-top:-3.5px;
+  border-radius:50%;background:var(--ink)}
+input[type=range]::-moz-range-track{height:2px;background:rgba(234,229,243,.18)}
+input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:50%;background:var(--ink)}
+#stats{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:10.5px;color:rgba(234,229,243,.72)}
+#stats b{font-weight:400;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:12px;margin:6px 0 0;font-size:10px;color:var(--dim)}
+.legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+#banner{position:fixed;left:14px;top:12px;z-index:5;max-width:min(560px,60vw);padding:8px 11px;
+  border:1px solid rgba(246,170,14,.35);border-radius:4px;background:rgba(246,170,14,.1);
+  color:#f6d79a;font-size:11px;line-height:1.5}
+#banner[hidden]{display:none}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<aside id="panel">
+  <h1>Bloom timeline<span>debug</span></h1>
+  <p class="sub">Đúng setup xuất từ <b>petal_bud</b>: Q · <code>w0=0</code> · N/M · curl/wrap/tilt/base · τ/ζ/stagger.
+    Motion được <b>mô phỏng trước</b> ở 240 Hz rồi scrub — kết quả không phụ thuộc frame rate.</p>
+
+  <div class="grp"><h2>Hướng chạy</h2><div id="dir" class="tabs"></div></div>
+  <div class="grp"><h2>Motion</h2><div id="motion"></div></div>
+  <div class="grp"><h2>Hình nụ</h2><div id="shape"></div></div>
+  <div class="grp"><h2>Cánh đang chọn</h2><div id="stats"></div>
+    <div class="legend"><span><i style="background:#ff6b7d"></i>lớp ngoài</span><span><i style="background:#8e9bff"></i>lớp trong</span></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Space play/pause · ←/→ ±1 frame · R về 0 · kéo ở dock để scrub · click vào track để chọn cánh.</p>
+</aside>
+<div id="dock">
+  <div id="dockbar">
+    <div class="tabs"><button id="tab-tl" class="on">Timeline</button><button id="tab-cv">Curve</button></div>
+    <button id="rewind" title="về 0">⏮</button>
+    <button id="play" title="play/pause">▶</button>
+    <button id="loop" class="on" title="lặp">↻</button>
+    <span id="clock">0.00 / 5.00 s</span>
+    <select id="speed" style="background:#12121c;color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:400 11px ui-monospace,Menlo,monospace">
+      <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option><option value="2">2×</option>
+    </select>
+    <span style="color:var(--dim);font-size:10px;margin-left:6px">cánh</span>
+    <select id="selpetal" style="min-width:150px;background:#12121c;color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:400 11px ui-monospace,Menlo,monospace"></select>
+    <span class="sp"></span>
+    <span style="color:var(--dim);font-size:10px">kéo để scrub · dblclick khung 3D để reset view</span>
+  </div>
+  <canvas id="dockcv"></canvas>
+</div>
+<div id="banner" hidden></div>
+<script src="../../lib/three.min.js"></script>
+<script>
+(async () => {
+  'use strict';
+
+  // ============================================================
+  // Setup — chép nguyên từ panel "Xuất ra main.js" của debug/petal_bud
+  // ============================================================
+  const AXIS_ANG = 1.0033;                                   // 57.48°
+  const Q = [[40, 370], [160, 510], [310, 270], [470, 430]];
+  const W = { w0: 0, w1: 63, w2: 49, t1: 0.30, t2: 0.72 };   // st = n*s*0 · c1 = .3A + n*s*63 · c2 = .72A + n*s*49
+  const RES = { N: 120, M: 28 };
+  const HUE = { curl: 0.56, wrap: 0.8, tilt: 1.45, base: 40 };   // bloom v3 (reflex −0.12 nằm trong shader)
+  const MOTION = { tau: 0.28, zeta: 0.55, stagger: 0.35, seedLag: 0.08, massOuter: 1.12 };
+  const LAYERS = [{ n: 9, s: 0.47, off: 0 }, { n: 9, s: 0.30, off: 20 }];   // ngoài trước, trong sau
+  const DUR = 5, RATE = 240;                                  // timeline 5 s, mô phỏng 240 Hz
+
+  const FLOW = { radius: 300, scale: 140, drag: 160, amp: 82 };
+  const WIND = { amp: 46, period: 3.4 };
+  const GLSL_FLOW = `#define R0 ${FLOW.radius.toFixed(1)}\n#define FLOW_SCALE ${FLOW.scale.toFixed(1)}\n`
+    + `#define DRAG ${FLOW.drag.toFixed(1)}\n#define WIND_AMP ${WIND.amp.toFixed(1)}\n#define WIND_PERIOD ${WIND.period.toFixed(1)}\n`;
+
+  const bez = (a, b, c, d, t) => { const m = 1 - t; return m * m * m * a + 3 * m * m * t * b + 3 * m * t * t * c + t * t * t * d; };
+  const num = (v, d = 2) => (+v).toFixed(d);
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- shader: FRAG từ shaders.glsl, VERT từ debug/bloom_v3.glsl ----------
+  const banner = $('banner');
+  const parseChunks = (all) => {
+    const re = /^[ \t]*\/\/[ \t]*-{3,}[ \t]*([A-Z][A-Z0-9_]*)/gm;
+    const marks = []; let m;
+    while ((m = re.exec(all)) !== null) marks.push({ key: m[1], start: all.indexOf('\n', m.index) + 1 });
+    const sh = {};
+    for (let i = 0; i < marks.length; i++) {
+      const { key, start } = marks[i];
+      if (key in sh) continue;
+      sh[key] = all.slice(start, i + 1 < marks.length ? marks[i + 1].start : undefined).trim();
+    }
+    return sh;
+  };
+  let SH = null;
+  try {
+    const [a, b] = await Promise.all([
+      fetch('../../shaders.glsl', { cache: 'no-store' }),
+      fetch('../bloom_v3.glsl', { cache: 'no-store' }),
+    ]);
+    if (!a.ok) throw new Error('shaders.glsl HTTP ' + a.status);
+    if (!b.ok) throw new Error('bloom_v3.glsl HTTP ' + b.status);
+    const m = parseChunks(await a.text());
+    SH = { FRAG: m.FRAG, VERT: GLSL_FLOW + parseChunks(await b.text()).VERT_V3 };
+  } catch (err) {
+    banner.hidden = false;
+    banner.textContent = 'Không tải được shader (' + err.message + ') → timeline vẫn chạy, chỉ thiếu khung 3D. '
+      + 'Chạy bằng HTTP ở thư mục gốc.';
+    $('view').innerHTML = '<div class="no3d">Không có shader → chỉ hiện timeline.<br>Chạy HTTP ở thư mục gốc để có khung 3D.</div>';
+  }
+
+  // ---------- hình học: y hệt createGeometries() với setup này ----------
+  function buildPetal() {
+    const N = RES.N, M = RES.M, V = N * M;
+    const pos = new Float32Array(V * 3), aPetal = new Float32Array(V * 2), aBake = new Float32Array(V * 3);
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1), s = 2 * t - 1;
+      const Ax = bez(Q[0][0], Q[1][0], Q[2][0], Q[3][0], t);
+      const Ay = bez(Q[0][1], Q[1][1], Q[2][1], Q[3][1], t);
+      const len = Math.hypot(Ax, Ay) || 1, nx = Ay / len, ny = -Ax / len;
+      const stx = nx * s * W.w0, sty = ny * s * W.w0;
+      const c1x = W.t1 * Ax + nx * s * W.w1, c1y = W.t1 * Ay + ny * s * W.w1;
+      const c2x = W.t2 * Ax + nx * s * W.w2, c2y = W.t2 * Ay + ny * s * W.w2;
+      for (let j = 0; j < M; j++) {
+        const u = j / (M - 1), o = (i * M + j) * 3;
+        pos[o] = bez(stx, c1x, c2x, Ax, u);
+        pos[o + 1] = bez(sty, c1y, c2y, Ay, u);
+        pos[o + 2] = t;
+      }
+    }
+    const ax = [Math.cos(AXIS_ANG), Math.sin(AXIS_ANG)];
+    let lmax = 0;
+    for (let k = 0; k < V; k++) lmax = Math.max(lmax, pos[k * 3] * ax[0] + pos[k * 3 + 1] * ax[1]);
+    if (!(lmax > 1e-6)) lmax = 1;
+    for (let k = 0; k < V; k++) {
+      const x = pos[k * 3], y = pos[k * 3 + 1];
+      const u = Math.max(0, Math.min(1.1, (x * ax[0] + y * ax[1]) / lmax));
+      aPetal[k * 2] = u; aPetal[k * 2 + 1] = Math.pow(u, 1.25);
+      const rho = Math.min(1.2, Math.hypot(x, y) / FLOW.radius);
+      aBake[k * 3] = rho; aBake[k * 3 + 1] = Math.pow(rho, 1.6); aBake[k * 3 + 2] = Math.pow(rho, 1.4);
+    }
+    const lineIdx = [], rimIdx = [], fillIdx = [];
+    for (let i = 0; i < N; i++) for (let j = 0; j < M - 1; j++) lineIdx.push(i * M + j, i * M + j + 1);
+    for (let i = 0; i < N - 1; i++) {
+      rimIdx.push(i * M + M - 1, (i + 1) * M + M - 1);
+      for (let j = 0; j < M - 1; j++) {
+        const p0 = i * M + j, b = p0 + 1, c = p0 + M, d = c + 1;
+        fillIdx.push(p0, b, c, b, d, c);
+      }
+    }
+    return { pos, aPetal, aBake, lineIdx, rimIdx, fillIdx, lmax, ax };
+  }
+
+  // ---------- 18 cánh: hướng radial cố định, độ mở do iOpen ----------
+  let insts = [];
+  function buildInsts() {
+    insts = [];
+    LAYERS.forEach((L, li) => {
+      for (let j = 0; j < L.n; j++) {
+        const T = (L.off + j * 360 / L.n) * Math.PI / 180, mir = j % 2 ? -1 : 1;
+        const eff = mir === 1 ? AXIS_ANG : Math.PI - AXIS_ANG;
+        const seed = (j * 0.37 + li * 0.21) % 1;
+        insts.push({
+          rot: T - eff, s: L.s, mir, seed, layer: li, j,
+          curlK: 0.90 + seed * 0.20, wrapK: 0.92 + seed * 0.16, tiltK: 0.88 + seed * 0.24,
+          tStart: MOTION.stagger * li + seed * MOTION.seedLag,
+          tau: MOTION.tau * (0.88 + seed * 0.24) * (li === 0 ? MOTION.massOuter : 1),
+        });
+      }
+    });
+    return insts;
+  }
+
+  // ---------- mô phỏng trước 18 lò xo (ζ<1) ở 240 Hz ----------
+  const LEN = Math.round(DUR * RATE);
+  let curves = [], stats = [], allSettled = 0;
+  function simulate(from, to) {
+    const dt = 1 / RATE;
+    curves = []; stats = []; allSettled = 0;
+    for (const p of insts) {
+      const w = 1 / p.tau, c = 2 * MOTION.zeta * w, until = p.tStart + 2.4 + 4 * p.tau;
+      const arr = new Float32Array(LEN);
+      let x = from, v = 0, settle = null;
+      const i0 = Math.min(LEN - 1, Math.ceil(p.tStart * RATE));
+      for (let i = 0; i < LEN; i++) {
+        const t = i * dt;
+        if (t >= p.tStart && settle === null) {
+          v += (w * w * (to - x) - c * v) * dt;
+          x += v * dt;
+          if ((Math.abs(to - x) < 3e-3 && Math.abs(v) < 3e-3) || t > until) { x = to; v = 0; settle = t; }
+        }
+        arr[i] = x;
+      }
+      // hai cực trị: (1) vượt quá đích, (2) cú nảy ngược lại sau đó
+      const up = to > from;
+      let iP = -1, iR = -1;
+      for (let i = i0; i < LEN; i++) if (iP < 0 || (up ? arr[i] > arr[iP] : arr[i] < arr[iP])) iP = i;
+      for (let i = iP + 1; i < LEN; i++) if (iR < 0 || (up ? arr[i] < arr[iR] : arr[i] > arr[iR])) iR = i;
+      curves.push(arr);
+      stats.push({
+        peak: arr[iP], tPeak: iP / RATE,
+        rebound: iR < 0 ? to : arr[iR], tRebound: iR < 0 ? DUR : iR / RATE,
+        settle: settle === null ? DUR : settle,
+      });
+      allSettled = Math.max(allSettled, stats[stats.length - 1].settle);
+    }
+  }
+  const openAt = (k, t) => curves[k][Math.min(LEN - 1, Math.round(Math.max(0, Math.min(DUR, t)) * RATE))];
+
+  // ---------- three ----------
+  const built = buildPetal();
+  let renderer = null, scene = null, camera = null, group = null, iOpenAttr = null, U = null;
+  const view = { target: new THREE.Vector3(0, 0, 90), radius: 1150, theta: 1.05, phi: 1.12 };
+
+  function initGL() {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
+    $('view').appendChild(renderer.domElement);
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(35, 1, 1, 12000);
+    group = new THREE.Group(); scene.add(group);
+
+    const grid = new THREE.GridHelper(2000, 20, 0x332c55, 0x1c1830);
+    grid.rotation.x = Math.PI / 2; grid.position.z = -140;
+    grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthTest = false;
+    grid.renderOrder = -2; scene.add(grid);
+
+    const col = (h) => new THREE.Color(h);
+    const ramp = ['#ff3d5a', '#c02ad0', '#8e56ea', '#c0adf4', '#b9c3ff'];
+    const lightA = 43 * Math.PI / 180;
+    U = {
+      uAmp: { value: FLOW.amp }, uEnergy: { value: 0.15 }, uPhase: { value: 0 }, uDrift: { value: 0 },
+      uTime: { value: 0 }, uWind: { value: 0.35 }, uLmax: { value: built.lmax },
+      uAxis: { value: new THREE.Vector2(built.ax[0], built.ax[1]) },
+      uCurl: { value: HUE.curl }, uWrap: { value: HUE.wrap }, uTilt: { value: HUE.tilt }, uBase: { value: HUE.base },
+      uGdir: { value: new THREE.Vector2(320, 410).normalize() },
+      uLight: { value: new THREE.Vector2(Math.cos(lightA), Math.sin(lightA)) },
+      uLightK: { value: new THREE.Vector3(0.25, 0.18, 0.2) },
+      uC0: { value: col(ramp[0]) }, uC1: { value: col(ramp[1]) }, uC2: { value: col(ramp[2]) },
+      uC3: { value: col(ramp[3]) }, uC4: { value: col(ramp[4]) }, uDeep: { value: col('#5a35c8') },
+    };
+    const mat = (alpha) => new THREE.ShaderMaterial({
+      uniforms: Object.assign({ uAlpha: { value: alpha } }, U),
+      vertexShader: SH.VERT, fragmentShader: SH.FRAG,
+      transparent: true, depthWrite: false, depthTest: false,
+    });
+
+    const n = insts.length;
+    const posAttr = new THREE.BufferAttribute(built.pos, 3);
+    const aPetalAttr = new THREE.BufferAttribute(built.aPetal, 2);
+    const aBakeAttr = new THREE.BufferAttribute(built.aBake, 3);
+    const iData = new Float32Array(n * 4), iData2 = new Float32Array(n * 3), iRot = new Float32Array(n * 4);
+    insts.forEach((p, k) => {
+      iData.set([0, p.s, p.mir, p.seed], k * 4);
+      iData2.set([p.curlK, p.wrapK, p.tiltK], k * 3);
+      iRot.set([Math.cos(p.rot), Math.sin(p.rot), Math.pow(p.s, 1.6), Math.pow(p.s, 1.4)], k * 4);
+    });
+    iOpenAttr = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+    iOpenAttr.setUsage(THREE.DynamicDrawUsage);
+
+    const geo = (idx) => {
+      const g = new THREE.InstancedBufferGeometry();
+      g.setAttribute('position', posAttr);
+      g.setAttribute('aPetal', aPetalAttr);
+      g.setAttribute('aBake', aBakeAttr);
+      g.setAttribute('iData', new THREE.InstancedBufferAttribute(iData, 4));
+      g.setAttribute('iData2', new THREE.InstancedBufferAttribute(iData2, 3));
+      g.setAttribute('iRot', new THREE.InstancedBufferAttribute(iRot, 4));
+      g.setAttribute('iOpen', iOpenAttr);
+      g.setIndex(idx);
+      g.instanceCount = n;
+      return g;
+    };
+    [[built.fillIdx, 0.12, THREE.Mesh, 1], [built.lineIdx, 0.24, THREE.LineSegments, 2], [built.rimIdx, 0.92, THREE.LineSegments, 3]]
+      .forEach(([idx, alpha, Kind, order]) => {
+        const o = new Kind(geo(idx), mat(alpha));
+        o.frustumCulled = false; o.renderOrder = order; group.add(o);
+      });
+
+    // ---- orbit (quay / zoom / pan) ----
+    const el = renderer.domElement, pointers = new Map();
+    let drag = null;
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('pointerdown', (e) => {
+      el.setPointerCapture?.(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        drag = { kind: (e.button === 2 || e.shiftKey) ? 'pan' : 'orbit', x: e.clientX, y: e.clientY };
+        $('view').classList.add('grabbing');
+      } else if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        drag = { kind: 'pinch', d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) };
+      }
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId) || !drag) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (drag.kind === 'pinch' && pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        view.radius = Math.max(200, Math.min(6000, view.radius * (drag.d0 / d)));
+        drag.d0 = d;
+        return;
+      }
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      drag.x = e.clientX; drag.y = e.clientY;
+      if (drag.kind === 'orbit') {
+        view.theta -= dx * 0.005;
+        view.phi = Math.max(0.2, Math.min(Math.PI / 2 + 0.5, view.phi - dy * 0.005));
+      } else {
+        const k = 2 * view.radius * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, el.clientHeight);
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+        view.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+      }
+    });
+    const end = (e) => {
+      pointers.delete(e.pointerId);
+      if (!pointers.size) { drag = null; $('view').classList.remove('grabbing'); }
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      view.radius = Math.max(200, Math.min(6000, view.radius * Math.exp(e.deltaY * 0.0012)));
+    }, { passive: false });
+    el.addEventListener('dblclick', resetView);
+  }
+  const resetView = () => { view.target.set(0, 0, 90); view.radius = 1150; view.theta = 1.05; view.phi = 1.12; };
+
+  const resizeGL = () => {
+    if (!renderer) return;
+    const host = $('view'), w = host.clientWidth, h = host.clientHeight;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    camera.aspect = Math.max(0.2, w / Math.max(1, h));
+    camera.updateProjectionMatrix();
+  };
+
+  // ---------- transport ----------
+  const ui = { tab: 'tl', play: false, loop: true, speed: 1, time: 0, dir: 1, sel: 0 };
+  let statsAt = -1;
+  function setTime(t) {
+    ui.time = Math.max(0, Math.min(DUR, t));
+    $('clock').textContent = num(ui.time) + ' / ' + num(DUR) + ' s';
+    if (iOpenAttr) {
+      const arr = iOpenAttr.array;
+      for (let k = 0; k < insts.length; k++) arr[k] = openAt(k, ui.time);
+      iOpenAttr.needsUpdate = true;
+    }
+    drawDock();
+    if (Math.abs(ui.time - statsAt) > 0.04) { statsAt = ui.time; updateStats(); }
+  }
+  function setPlay(on) { ui.play = on; $('play').textContent = on ? '❚❚' : '▶'; $('play').classList.toggle('on', on); }
+  function recompute() {
+    buildInsts();
+    simulate(ui.dir === 1 ? 0 : 1, ui.dir === 1 ? 1 : 0);
+    syncInputs();
+    invalidateStatic();
+    setTime(ui.time);
+  }
+  function rescaleLayers() {
+    buildInsts();
+    if (renderer) {
+      group.children.forEach((o) => {
+        const a = o.geometry.attributes;
+        insts.forEach((p, k) => {
+          a.iRot.array.set([Math.cos(p.rot), Math.sin(p.rot), Math.pow(p.s, 1.6), Math.pow(p.s, 1.4)], k * 4);
+          a.iData.array[k * 4 + 1] = p.s;
+        });
+        a.iRot.needsUpdate = true; a.iData.needsUpdate = true;
+      });
+    }
+    simulate(ui.dir === 1 ? 0 : 1, ui.dir === 1 ? 1 : 0);
+    invalidateStatic();
+    setTime(ui.time);
+  }
+
+  // ---------- panel ----------
+  const sync = [];
+  function slider(host, label, get, set, min, max, step, dp = 2) {
+    const row = document.createElement('label'); row.className = 'row';
+    const name = document.createElement('span'); name.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = get();
+    const out = document.createElement('b'); out.textContent = num(get(), dp);
+    inp.addEventListener('input', () => { out.textContent = num(inp.value, dp); set(+inp.value); });
+    row.append(name, inp, out); host.appendChild(row);
+    sync.push({ inp, out, get, dp });
+  }
+  function syncInputs() {
+    sync.forEach((s) => { s.inp.value = s.get(); s.out.textContent = num(s.get(), s.dp); });
+  }
+
+  slider($('motion'), 'τ = 1/ω (s)', () => MOTION.tau, (v) => { MOTION.tau = v; recompute(); }, 0.10, 0.8, 0.01, 3);
+  slider($('motion'), 'ζ (quán tính)', () => MOTION.zeta, (v) => { MOTION.zeta = v; recompute(); }, 0.15, 1.1, 0.01, 2);
+  slider($('motion'), 'lệch lớp (s)', () => MOTION.stagger, (v) => { MOTION.stagger = v; recompute(); }, 0, 0.9, 0.01, 2);
+  slider($('motion'), 'lệch seed (s)', () => MOTION.seedLag, (v) => { MOTION.seedLag = v; recompute(); }, 0, 0.3, 0.005, 3);
+  slider($('motion'), 'nặng: ngoài ×', () => MOTION.massOuter, (v) => { MOTION.massOuter = v; recompute(); }, 1, 1.6, 0.01, 2);
+  slider($('shape'), 'curl (nụ, rad)', () => HUE.curl, (v) => { HUE.curl = v; if (U) U.uCurl.value = v; }, -1.5, 2.5, 0.01, 2);
+  slider($('shape'), 'wrap', () => HUE.wrap, (v) => { HUE.wrap = v; if (U) U.uWrap.value = v; }, 0.2, 1, 0.01, 2);
+  slider($('shape'), 'tilt (rad)', () => HUE.tilt, (v) => { HUE.tilt = v; if (U) U.uTilt.value = v; }, 0, 2, 0.01, 2);
+  slider($('shape'), 'base (vành đế)', () => HUE.base, (v) => { HUE.base = v; if (U) U.uBase.value = v; }, 0, 120, 1, 0);
+  slider($('shape'), 's lớp ngoài', () => LAYERS[0].s, (v) => { LAYERS[0].s = v; rescaleLayers(); }, 0.2, 0.7, 0.01, 2);
+  slider($('shape'), 's lớp trong', () => LAYERS[1].s, (v) => { LAYERS[1].s = v; rescaleLayers(); }, 0.15, 0.6, 0.01, 2);
+
+  // hướng chạy
+  [['Nở 0 → 1', 1], ['Khép 1 → 0', 0]].forEach(([label, v]) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.className = ui.dir === v ? 'on' : '';
+    b.addEventListener('click', () => {
+      ui.dir = v;
+      [...$('dir').children].forEach((x) => x.classList.toggle('on', x === b));
+      recompute(); setTime(0); setPlay(true);
+    });
+    $('dir').appendChild(b);
+  });
+
+  function updateStats() {
+    const k = Math.min(ui.sel, insts.length - 1), p = insts[k], st = stats[k];
+    if (!st) return;
+    $('stats').innerHTML = [
+      ['cánh', '#' + k + (p.layer === 0 ? ' · ngoài' : ' · trong')],
+      ['seed', num(p.seed, 3)],
+      ['bắt đầu', num(p.tStart, 3) + ' s'],
+      ['τ', num(p.tau, 3) + ' s'],
+      ['open', num(openAt(k, ui.time), 3)],
+      ['vượt đích', num(st.peak, 3) + ' @ ' + num(st.tPeak, 2) + 's'],
+      ['nảy lại', num(st.rebound, 3) + ' @ ' + num(st.tRebound, 2) + 's'],
+      ['lắng', num(st.settle, 2) + ' s'],
+      ['tất cả lắng', num(allSettled, 2) + ' s'],
+    ].map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('');
+  }
+
+  // ---------- dock: timeline / curve (lớp tĩnh vẽ lại khi cần, playhead vẽ mỗi frame) ----------
+  const dock = $('dockcv'), dctx = dock.getContext('2d');
+  const layer = document.createElement('canvas'), lctx = layer.getContext('2d');
+  let staticDirty = true, DW = 0, DH = 0;
+  const invalidateStatic = () => { staticDirty = true; drawDock(); };
+  const PAD_L = 44, PAD_R = 8;
+  const C = { outer: '#ff6b7d', inner: '#8e9bff', sel: '#ffffff', grid: 'rgba(234,229,243,.10)',
+    text: 'rgba(234,229,243,.5)', edge: 'rgba(234,229,243,.18)' };
+
+  function sizeDock() {
+    const r = dock.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    DW = Math.max(80, Math.round(r.width)); DH = Math.max(60, Math.round(r.height));
+    const pw = Math.round(DW * dpr), ph = Math.round(DH * dpr);
+    if (dock.width !== pw || dock.height !== ph) { dock.width = pw; dock.height = ph; }
+    if (layer.width !== pw || layer.height !== ph) { layer.width = pw; layer.height = ph; }
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const xAt = (t) => PAD_L + (t / DUR) * (DW - PAD_L - PAD_R);
+
+  function drawDock() {
+    sizeDock();
+    if (staticDirty) {
+      lctx.clearRect(0, 0, DW, DH);                        // layer tĩnh phải xoá, nếu không tab trước còn lẫn
+      (ui.tab === 'tl' ? drawTimelineStatic : drawCurveStatic)(lctx, DW, DH);
+      staticDirty = false;
+    }
+    dctx.clearRect(0, 0, DW, DH);
+    dctx.drawImage(layer, 0, 0, DW, DH);
+    drawPlayhead(ui.tab === 'tl' ? 18 : 18, DH - 4);
+  }
+
+  function ruler(ctx, y) {
+    ctx.strokeStyle = C.edge; ctx.fillStyle = C.text; ctx.font = '9px ui-monospace,Menlo,monospace';
+    ctx.beginPath(); ctx.moveTo(PAD_L, y + 0.5); ctx.lineTo(DW - PAD_R, y + 0.5); ctx.stroke();
+    for (let i = 0; i <= DUR * 2; i++) {
+      const x = xAt(i / 2);
+      ctx.strokeStyle = i % 2 ? 'rgba(234,229,243,.10)' : C.edge;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + (i % 2 ? 3 : 6)); ctx.stroke();
+      if (i % 2 === 0) ctx.fillText((i / 2).toFixed(1) + 's', x + 3, y - 3);
+    }
+  }
+
+  function drawPlayhead(y0, y1) {
+    const x = xAt(ui.time);
+    dctx.strokeStyle = '#f6aa0e'; dctx.lineWidth = 1;
+    dctx.beginPath(); dctx.moveTo(x, y0); dctx.lineTo(x, y1); dctx.stroke();
+    dctx.fillStyle = '#f6aa0e';
+    dctx.beginPath(); dctx.moveTo(x - 4, y0); dctx.lineTo(x + 4, y0); dctx.lineTo(x, y0 + 6); dctx.closePath(); dctx.fill();
+  }
+
+  function drawTimelineStatic(ctx, w, h) {
+    const top = 22, lo = -0.2, hi = 1.3;
+    const lanes = [
+      { label: 'ngoài', ks: insts.map((p, k) => k).filter((k) => insts[k].layer === 0), color: C.outer, strong: false },
+      { label: 'trong', ks: insts.map((p, k) => k).filter((k) => insts[k].layer === 1), color: C.inner, strong: false },
+      { label: '#' + ui.sel, ks: [ui.sel], color: C.sel, strong: true },
+    ];
+    const laneH = (h - top - 6) / lanes.length;
+    ruler(ctx, 14);
+    lanes.forEach((lane, li) => {
+      const y0 = top + li * laneH, y1 = y0 + laneH - 4;
+      const mapY = (v) => y1 - ((v - lo) / (hi - lo)) * (y1 - y0);
+      if (lane.strong) { ctx.fillStyle = 'rgba(255,255,255,.045)'; ctx.fillRect(PAD_L, y0, w - PAD_L - PAD_R, laneH); }
+      // mốc 1.0 (P0)
+      ctx.strokeStyle = 'rgba(234,229,243,.09)';
+      ctx.beginPath(); ctx.moveTo(PAD_L, mapY(1)); ctx.lineTo(w - PAD_R, mapY(1)); ctx.stroke();
+      ctx.fillStyle = lane.strong ? C.sel : C.text; ctx.font = '9px ui-monospace,Menlo,monospace';
+      ctx.fillText(lane.label, 8, y0 + laneH * 0.5);
+      ctx.strokeStyle = lane.color; ctx.lineWidth = lane.strong ? 1.8 : 0.8;
+      ctx.globalAlpha = lane.strong ? 1 : 0.6;
+      lane.ks.forEach((k) => {
+        ctx.beginPath();
+        for (let i = 0; i < LEN; i += 3) {
+          const x = xAt(i / RATE), yy = mapY(curves[k][i]);
+          i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+        }
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      if (lane.strong) {
+        const st = stats[ui.sel];
+        const mark = (t, v, label, col) => {
+          const x = xAt(t), y = mapY(v);
+          ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = col; ctx.fillText(label + ' ' + num(v, 3), Math.min(x + 5, w - 78), y - 5);
+        };
+        mark(st.tPeak, st.peak, 'vượt', '#f6aa0e');
+        mark(st.tRebound, st.rebound, 'nảy', '#7be3a0');
+      }
+      ctx.strokeStyle = 'rgba(234,229,243,.06)';
+      ctx.beginPath(); ctx.moveTo(PAD_L, y1 + 3); ctx.lineTo(w - PAD_R, y1 + 3); ctx.stroke();
+    });
+    ctx.strokeStyle = C.edge; ctx.beginPath(); ctx.moveTo(PAD_L, top); ctx.lineTo(PAD_L, h - 4); ctx.stroke();
+    // mốc tất cả cánh lắng
+    const xs = xAt(allSettled);
+    ctx.strokeStyle = 'rgba(246,170,14,.35)'; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(xs, top); ctx.lineTo(xs, h - 4); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(246,170,14,.8)'; ctx.font = '9px ui-monospace,Menlo,monospace';
+    ctx.fillText('lắng ' + num(allSettled, 2) + 's', Math.min(xs + 4, w - 62), top + 9);
+  }
+
+  function drawCurveStatic(ctx, w, h) {
+    const y0 = 20, y1 = h - 18, lo = -0.2, hi = 1.3;
+    const mapY = (v) => y1 - ((v - lo) / (hi - lo)) * (y1 - y0);
+    ruler(ctx, y0);
+    ctx.font = '9px ui-monospace,Menlo,monospace';
+    for (const v of [0, 0.5, 1, 1.2]) {
+      const y = mapY(v);
+      ctx.strokeStyle = v === 1 ? 'rgba(234,229,243,.35)' : C.grid;
+      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
+      ctx.fillStyle = C.text; ctx.fillText(v.toFixed(1), 12, y + 3);
+      if (v === 1) { ctx.fillStyle = 'rgba(234,229,243,.55)'; ctx.fillText('P0', w - PAD_R - 20, y - 4); }
+    }
+    insts.forEach((p, k) => {
+      if (k === ui.sel) return;
+      ctx.strokeStyle = p.layer === 0 ? C.outer : C.inner;
+      ctx.globalAlpha = 0.26; ctx.lineWidth = 0.8; ctx.beginPath();
+      for (let i = 0; i < LEN; i += 3) {
+        const x = xAt(i / RATE), yy = mapY(curves[k][i]);
+        i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    });
+    const k = ui.sel, st = stats[k];
+    ctx.strokeStyle = C.sel; ctx.lineWidth = 1.8; ctx.beginPath();
+    for (let i = 0; i < LEN; i += 2) {
+      const x = xAt(i / RATE), yy = mapY(curves[k][i]);
+      i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+    }
+    ctx.stroke();
+    const mark = (t, v, label, col) => {
+      const x = xAt(t), y = mapY(v);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
+      ctx.font = '9px ui-monospace,Menlo,monospace';
+      ctx.fillText(label + ' ' + num(v, 3), Math.min(x + 5, w - 76), y - 5);
+    };
+    mark(st.tPeak, st.peak, 'vượt', '#f6aa0e');
+    mark(st.tRebound, st.rebound, 'nảy', '#7be3a0');
+    mark(st.settle, ui.dir === 1 ? 1 : 0, 'lắng', C.text);
+    ctx.fillStyle = 'rgba(234,229,243,.55)'; ctx.font = '10px ui-monospace,Menlo,monospace';
+    ctx.fillText('open(t) · cánh #' + k + (insts[k].layer === 0 ? ' (ngoài)' : ' (trong)') + ' đậm · 17 cánh còn lại mờ', PAD_L + 6, y1 - 4);
+  }
+
+  // ---------- scrub / chọn cánh ----------
+  let scrub = false;
+  const timeFromX = (clientX) => {
+    const r = dock.getBoundingClientRect();
+    return ((clientX - r.left - PAD_L) / (r.width - PAD_L - PAD_R)) * DUR;
+  };
+  dock.addEventListener('pointerdown', (e) => {
+    dock.setPointerCapture?.(e.pointerId);
+    scrub = true;
+    setPlay(false);
+    setTime(timeFromX(e.clientX));
+  });
+  dock.addEventListener('pointermove', (e) => { if (scrub) setTime(timeFromX(e.clientX)); });
+  dock.addEventListener('pointerup', () => { scrub = false; });
+  dock.addEventListener('pointercancel', () => { scrub = false; });
+
+  // ô chọn cánh (dựng sau khi có insts)
+  function buildPicker() {
+    const sel = $('selpetal');
+    sel.innerHTML = '';
+    insts.forEach((p, k) => {
+      const o = document.createElement('option');
+      o.value = String(k);
+      o.textContent = '#' + k + (p.layer === 0 ? ' ngoài' : ' trong') + ' · seed ' + num(p.seed, 2);
+      sel.appendChild(o);
+    });
+    sel.value = String(ui.sel);
+    sel.addEventListener('change', () => { ui.sel = +sel.value; invalidateStatic(); updateStats(); });
+  }
+
+  // ---------- transport wiring ----------
+  $('play').addEventListener('click', () => setPlay(!ui.play));
+  $('rewind').addEventListener('click', () => { setPlay(false); setTime(0); });
+  $('loop').addEventListener('click', () => { ui.loop = !ui.loop; $('loop').classList.toggle('on', ui.loop); });
+  $('speed').addEventListener('change', () => { ui.speed = +$('speed').value; });
+  $('tab-tl').addEventListener('click', () => { ui.tab = 'tl'; $('tab-tl').classList.add('on'); $('tab-cv').classList.remove('on'); invalidateStatic(); });
+  $('tab-cv').addEventListener('click', () => { ui.tab = 'cv'; $('tab-cv').classList.add('on'); $('tab-tl').classList.remove('on'); invalidateStatic(); });
+  addEventListener('keydown', (e) => {
+    if (e.target && /input|select/i.test(e.target.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); setPlay(!ui.play); }
+    else if (e.code === 'ArrowRight') { setPlay(false); setTime(ui.time + 1 / 60); }
+    else if (e.code === 'ArrowLeft') { setPlay(false); setTime(ui.time - 1 / 60); }
+    else if (e.key === 'r' || e.key === 'R') { setPlay(false); setTime(0); }
+  });
+
+  // ---------- boot ----------
+  buildInsts();
+  simulate(0, 1);
+  buildPicker();
+  if (SH) initGL();
+  syncInputs();
+  setTime(0);
+  addEventListener('resize', () => { resizeGL(); invalidateStatic(); });
+  if (renderer) resizeGL();
+
+  const clock = new THREE.Clock();
+  let wind = 0;
+  const frame = () => {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    wind += dt * 0.6;
+    if (ui.play) {
+      let t = ui.time + dt * ui.speed;
+      if (t >= DUR) { if (ui.loop) t = t % DUR; else { t = DUR; setPlay(false); } }
+      setTime(t);
+    }
+    if (renderer) {
+      const sp = new THREE.Spherical(view.radius, view.phi, view.theta);
+      camera.position.setFromSpherical(sp).add(view.target);
+      camera.lookAt(view.target);
+      U.uTime.value = wind; U.uPhase.value = wind;
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(frame);
+  };
+  frame();
+
+  window.timeline = {
+    AXIS_ANG, Q, W, RES, HUE, MOTION, LAYERS, DUR, RATE,
+    get insts() { return insts; }, get curves() { return curves; }, get stats() { return stats; },
+    get allSettled() { return allSettled; }, get renderer() { return renderer; },
+    state: ui, setTime, setPlay, recompute, simulate, resetView,
+  };
+})();
+</script>
+</body>
+</html>

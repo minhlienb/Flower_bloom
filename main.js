@@ -93,7 +93,7 @@ async function loadShaders() {
   const all = await resp.text();
   // Tách file theo marker "// ---------- KEY ----------" (file gộp 4 shader)
   const result = {};
-  const re = /^[ \t]*\/\/[ \t]*-+[ \t]*(\w+)/gm;
+  const re = /^[ \t]*\/\/[ \t]*-{3,}[ \t]*([A-Z][A-Z0-9_]*)/gm;
   const marks = [];
   let m;
   while ((m = re.exec(all)) !== null) marks.push({ key: m[1], start: all.indexOf('\n', m.index) + 1 });

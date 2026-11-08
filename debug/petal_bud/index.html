@@ -76,7 +76,8 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
   <div class="grp"><h2>Trục / độ phân giải</h2><div id="shape-a"></div></div>
   <div class="grp"><h2>Nở / khép</h2><div id="bud"></div>
     <div class="btns"><button id="bloom">Nở</button><button id="fold">Khép</button></div>
-    <p class="hint">Mỗi cánh một lò xo tới hạn (ζ=1, không nảy): lớp ngoài trước, lệch nhịp theo seed.</p></div>
+    <p class="hint">Mỗi cánh một lò xo có quán tính: bung quá <b>1.0</b> rồi nảy nhẹ, lắng về P0 — lớp ngoài trước, lệch nhịp theo seed.</p>
+    <p class="hint" id="bloomStat">peak —</p></div>
   <div class="grp"><h2>Chuyển động</h2><div id="motion"></div></div>
   <div class="grp"><h2>Xuất ra main.js</h2><pre id="out"></pre>
     <div class="btns"><button id="copy">Copy</button></div></div>
@@ -93,7 +94,7 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
   const AXIS = { deg: Math.atan2(400, 255) * 180 / Math.PI };  // = 57.47°
   // v3 — nụ = cánh CUỘN (không còn thu nhỏ + xoay): curl (rad khi còn nụ), wrap (bề ngang),
   // tilt (nghiêng quanh trục radial), stagger (lệch nhịp), tau (hằng số thời gian lò xo, ζ=1)
-  const BUD = { curl: 0.56, wrap: 0.8, tilt: 1.45, base: 40, stagger: 0.35, tau: 1.3 };
+  const BUD = { curl: 0.56, wrap: 0.8, tilt: 1.45, base: 40, stagger: 0.35, tau: 0.28, zeta: 0.55 };
   const LAYERS = [
     { n: 9, s: 0.47, off: 0 },    // lớp ngoài — nở trước
     { n: 9, s: 0.30, off: 20 },   // lớp trong  — nở sau
@@ -107,6 +108,7 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
     mode: 'petal',        // 'petal' = một cánh · 'bud' = cả bụp 18 cánh
     open: 1,              // 0 = nụ, 1 = mở hoàn toàn (kéo tay)
     anim: false,          // đang chạy lò xo nở/khép hay không
+    peakOpen: 1,          // đỉnh overshoot gần nhất (chỉ để đọc)
     wind: 0.35, energy: 0.15,
     showFill: true, showLines: true, showRim: true,
   };
@@ -123,12 +125,9 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
 
   // ---------- shader của trang chính (nếu không tải được -> material thay thế) ----------
   const banner = document.getElementById('banner');
-  let SHADERS = null;
-  try {
-    const res = await fetch('../../shaders.glsl', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const all = await res.text();
-    const re = /^[ \t]*\/\/[ \t]*-+[ \t]*(\w+)/gm;      // cùng cách tách marker như main.js
+  // tách file shader theo marker "// ---------- KEY ----------" (giống main.js)
+  const parseChunks = (all) => {
+    const re = /^[ \t]*\/\/[ \t]*-{3,}[ \t]*([A-Z][A-Z0-9_]*)/gm;
     const marks = []; let m;
     while ((m = re.exec(all)) !== null) marks.push({ key: m[1], start: all.indexOf('\n', m.index) + 1 });
     const sh = {};
@@ -137,7 +136,19 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
       if (key in sh) continue;
       sh[key] = all.slice(start, i + 1 < marks.length ? marks[i + 1].start : undefined).trim();
     }
+    return sh;
+  };
+  let SHADERS = null;
+  try {
+    const [resMain, resV3] = await Promise.all([
+      fetch('../../shaders.glsl', { cache: 'no-store' }),
+      fetch('../bloom_v3.glsl', { cache: 'no-store' }),      // VERT v3 dùng chung với page timeline
+    ]);
+    if (!resMain.ok) throw new Error('shaders.glsl HTTP ' + resMain.status);
+    if (!resV3.ok) throw new Error('bloom_v3.glsl HTTP ' + resV3.status);
+    const sh = parseChunks(await resMain.text());
     sh.VERT = GLSL_FLOW + sh.VERT;
+    sh.VERT_V3 = GLSL_FLOW + parseChunks(await resV3.text()).VERT_V3;
     SHADERS = sh;
   } catch (err) {
     banner.hidden = false;
@@ -145,98 +156,6 @@ pre#out{margin:6px 0 8px;padding:8px;border:1px solid var(--line);border-radius:
       + 'Mở bằng HTTP ở thư mục gốc để xem đúng shader: python -m http.server';
   }
 
-  // ============================================================
-  // VERT v3 — NỞ = DUỖI CONG. Không còn uOpen: mỗi cánh tự mang độ mở (iOpen).
-  // Nụ hình thành bằng độ cong (cung bảo toàn độ dài) + hẹp bề ngang + nghiêng,
-  // KHÔNG bằng thu nhỏ + xoay cả cánh. Đây là bản để bê vào shaders.glsl khi chốt.
-  // ============================================================
-  const VERT_V3 = GLSL_FLOW + `
-attribute vec4 iData;      // x: trống · y: s · z: mirror · w: seed
-attribute vec3 iData2;     // x: curlK · y: wrapK · z: tiltK — biến thiên từng cánh
-attribute vec4 iRot;       // x,y: cos/sin hướng radial (cố định) · z: sc^1.6 · w: sc^1.4
-attribute float iOpen;     // độ mở RIÊNG của cánh: 0 = nụ, 1 = nở
-attribute vec2 aPetal;     // u, u^1.25
-attribute vec3 aBake;      // rho, rho^1.6, rho^1.4
-
-uniform float uAmp, uEnergy, uPhase, uDrift, uTime, uWind, uLmax, uCurl, uWrap, uTilt, uBase;
-uniform vec2 uGdir, uAxis, uLight;
-uniform vec3 uC0, uC1, uC2, uC3, uC4, uDeep, uLightK;
-
-varying vec4 vCol;
-
-vec3 flow(vec2 r, float t) {
-  vec2 q = r / FLOW_SCALE;
-  float x = sin(q.y * 1.7 + t * 0.9) + 0.5 * sin(q.y * 3.1 - q.x * 2.3 + t * 1.4 + 1.7);
-  float y = sin(q.x * 1.5 - t * 0.8 + 2.1) + 0.5 * sin(q.x * 2.9 + q.y * 2.2 - t * 1.2);
-  float z = sin(q.x * 1.2 + q.y * 1.4 + t * 0.7) + 0.5 * sin(q.x * 2.6 - q.y * 1.9 - t * 1.1 + 0.6);
-  return vec3(x, y, z) / 1.5;
-}
-
-void main() {
-  vec2 p = position.xy;
-
-  // --- lớp gió dọc cánh (giữ nguyên) ---
-  float u = aPetal.x;
-  float tm = uTime / WIND_PERIOD, ph = iData.w;
-  float wv = sin(6.28318 * (1.6 * u - tm + 0.45 * position.z + ph)) +
-             0.22 * sin(6.28318 * (3.2 * u - 2.0 * tm + 0.8 * position.z + 2.0 * ph));
-  float d = WIND_AMP * uWind * aPetal.y * wv;
-  p += vec2(-uAxis.y, uAxis.x) * d * 0.6 - uAxis * (d * d / (2.0 * uLmax)) * 0.6;
-
-  // --- tư thế: mirror -> xoay radial -> tỉ lệ lớp ---
-  float o = clamp(iOpen, 0.0, 1.0);
-  float sc = iData.y;
-  float c = iRot.x, s = iRot.y;
-  vec2 q = vec2(p.x * iData.z, p.y);
-  vec2 r = vec2(c * q.x - s * q.y, s * q.x + c * q.y) * sc;
-
-  // --- hệ trục CỦA CÁNH sau khi xoay (không dùng uAxis trần: mỗi cánh một hướng) ---
-  vec2 axM = vec2(uAxis.x * iData.z, uAxis.y);
-  vec2 dir = vec2(c * axM.x - s * axM.y, s * axM.x + c * axM.y);
-  vec2 perp = vec2(-dir.y, dir.x);
-  float along = dot(r, dir);
-  float across = dot(r, perp);
-
-  // --- cuộn: cung tròn bảo toàn độ dài; tổng góc cuốn tại đầu cánh = curl ---
-  float len = max(sc * uLmax, 1.0);            // cánh mọc từ TÂM (gốc lưới = 0,0), không phải từ Q0
-  float arc = max(along, 0.0);
-  float curl = mix(uCurl * iData2.x, -0.12, o);          // nở: đầu cánh hơi bật ngược
-  float kk = curl / len;
-  float A = abs(kk) > 1e-4 ? sin(kk * arc) / kk : arc;
-  float Z = abs(kk) > 1e-4 ? (1.0 - cos(kk * arc)) / kk : 0.0;
-  float bw = across * mix(uWrap * iData2.y, 1.0, o);
-
-  // --- dựng cánh quanh trục TIẾP TUYẾN (vuông góc chiều dài): nụ thành khối đứng ---
-  float ta = uTilt * iData2.z * (1.0 - o);
-  float ct = cos(ta), st = sin(ta);
-  float a2 = A * ct - Z * st;            // thành phần dọc bị dựng vào z
-  float bz = A * st + Z * ct;
-  float baseR = uBase * sc * (1.0 - o);  // đế: cánh mọc trên vành khi còn nụ; nở ra thì khép về tâm (không để lỗ giữa hoa)
-  vec3 pos = vec3(dir * (baseR + a2) + perp * bw, bz);
-
-  // --- dòng nước + drift (giữ nguyên) ---
-  float vLight = dot(r / R0, uLight);
-  float rho = aBake.x * sc;
-  float anchor = aBake.y * iRot.z;
-  vec3 f = flow(r + vec2(iData.w * 120.0, position.z * 45.0), uPhase - rho * 1.2);
-  vec3 off = f * uAmp * uEnergy * anchor;
-  off.y += uDrift * DRAG * aBake.z * iRot.w;
-  float vG = clamp(dot(p, uGdir) / 520.0, 0.0, 1.0);
-  float vCrest = f.z * anchor;
-
-  vec3 col = mix(uC0, uC1, smoothstep(0.0, 0.1, vG));
-  col = mix(col, uC2, smoothstep(0.1, 0.32, vG));
-  col = mix(col, uC3, smoothstep(0.32, 0.65, vG));
-  col = mix(col, uC4, smoothstep(0.65, 1.0, vG));
-  col = mix(col, uDeep, uLightK.x * max(-vLight, 0.0));
-  col = mix(col, vec3(1.0), uLightK.y * max(vLight, 0.0));
-  col = mix(col, vec3(1.0), 0.25 * max(vCrest, 0.0));
-  float a = mix(0.3, 1.0, smoothstep(0.0, 0.3, vG)) * mix(0.75, 1.0, o) *
-            (1.0 + 0.4 * uEnergy) * (1.0 - uLightK.z * vLight);
-  vCol = vec4(col, a);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos.xy + off.xy, pos.z + off.z + d * 0.8 * sc, 1.0);
-}
-`;
 
   // ---------- three ----------
   const canvas = document.getElementById('c');
@@ -268,7 +187,7 @@ void main() {
   };
   const shaderMat = (alpha) => new THREE.ShaderMaterial({
     uniforms: Object.assign({ uAlpha: { value: alpha } }, U),
-    vertexShader: VERT_V3, fragmentShader: SHADERS.FRAG,
+    vertexShader: SHADERS.VERT_V3, fragmentShader: SHADERS.FRAG,
     transparent: true, depthWrite: false, depthTest: false,
   });
   const fallbackMat = {
@@ -325,7 +244,9 @@ void main() {
     p.wrapK = 0.92 + p.seed * 0.16;
     p.tiltK = 0.88 + p.seed * 0.24;
     p.open = state.open; p.target = state.open; p.vel = 0; p.tStart = 0;
-    p.tau = BUD.tau * (0.88 + p.seed * 0.24);
+    // sức nặng: cánh ngoài hơi "nặng" hơn cánh trong (chậm ~12%)
+    p.tau = BUD.tau * (0.88 + p.seed * 0.24) * (p.layer === 0 ? 1.12 : 1.0);
+    p.peak = 0;
     return p;
   }
   function buildInstances() {
@@ -767,7 +688,8 @@ void main() {
   slider($('bud'), 'tilt (dựng cánh khi nụ, rad)', () => BUD.tilt, (v) => { BUD.tilt = v; U.uTilt.value = v; }, 0, 2.2, 0.01, 2);
   slider($('bud'), 'base R (bán kính đế)', () => BUD.base, (v) => { BUD.base = v; U.uBase.value = v; }, 0, 120, 1, 0);
   slider($('bud'), 'lệch nhịp giữa lớp (s)', () => BUD.stagger, (v) => { BUD.stagger = v; }, 0, 1, 0.01, 2);
-  slider($('bud'), 'τ cánh (s)', () => BUD.tau, (v) => { BUD.tau = v; insts.forEach((p) => { p.tau = v * (0.88 + p.seed * 0.24); }); }, 0.2, 4, 0.05, 2);
+  slider($('bud'), 'τ cánh = 1/ω (s)', () => BUD.tau, (v) => { BUD.tau = v; insts.forEach((p) => { p.tau = v * (0.88 + p.seed * 0.24) * (p.layer === 0 ? 1.12 : 1.0); }); }, 0.08, 1.2, 0.01, 3);
+  slider($('bud'), 'ζ (quán tính)', () => BUD.zeta, (v) => { BUD.zeta = v; }, 0.15, 1.2, 0.01, 2);
   slider($('bud'), 's lớp ngoài', () => LAYERS[0].s, (v) => { LAYERS[0].s = v; rebuild(); }, 0.1, 0.8, 0.01, 2);
   slider($('bud'), 's lớp trong', () => LAYERS[1].s, (v) => { LAYERS[1].s = v; rebuild(); }, 0.1, 0.8, 0.01, 2);
 
@@ -784,7 +706,9 @@ void main() {
     insts.forEach((p) => {
       p.pending = target;
       p.tStart = now + BUD.stagger * p.layer + p.seed * 0.08;
+      p.peak = 0;
     });
+    state.peakOpen = 0;
   }
   $('bloom').addEventListener('click', () => bloomTo(1));
   $('fold').addEventListener('click', () => bloomTo(0));
@@ -802,7 +726,7 @@ const Q = [${Q.map((p) => `[${num(p[0])}, ${num(p[1])}]`).join(', ')}];
 // createGeometries(): st = n*s*${num(W.w0)} ; c1 = ${num(W.t1)}*A + n*s*${num(W.w1)} ; c2 = ${num(W.t2)}*A + n*s*${num(W.w2)}
 // N=${P.N} M=${P.M}  ·  lmax=${num(built.lmax)}
 // bloom v3 (shaders.glsl): curl=${num(BUD.curl)} wrap=${num(BUD.wrap)} tilt=${num(BUD.tilt)} base=${num(BUD.base)} · đầu cánh bật ngược −0.12 khi nở
-// nhịp: ζ=1, τ=${num(BUD.tau)}s, lệch lớp ${num(BUD.stagger)}s (ngoài trước)`;
+// nhịp: τ=${num(BUD.tau)}s ζ=${num(BUD.zeta)} (lò xo có quán tính, open vượt 1.0), lệch lớp ${num(BUD.stagger)}s (ngoài trước)`;
   }
   $('fit').addEventListener('click', fitView);
   $('reset').addEventListener('click', () => {
@@ -833,27 +757,38 @@ const Q = [${Q.map((p) => `[${num(p[0])}, ${num(p[1])}]`).join(', ')}];
   fitView();
 
   const clock = new THREE.Clock();
-  let t = 0;
+  let t = 0, statLast = 0;
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
     t += dt * (0.4 + 2 * state.energy);
     U.uTime.value = t; U.uPhase.value = t; U.uWind.value = state.wind; U.uEnergy.value = state.energy;
 
-    // nở/khép: 18 lò xo tới hạn — KHÔNG quá đà (hoa thật không rung khi nở)
+    // nở/khép: 18 lò xo có QUÁN TÍNH (ζ < 1) — bung quá 1.0 rồi nảy nhẹ, lắng về đúng P0
     if (state.anim) {
-      const now = performance.now() / 1000;
-      let busy = false;
+      const now = performance.now() / 1000;  // (chỉ dùng cho lịch khởi động từng cánh)
+      let busy = false, peak = 0;
       for (const p of insts) {
         if (now < p.tStart) busy = true;
         else if (p.target !== p.pending) p.target = p.pending;
-        const w = 1 / p.tau;
-        p.vel += (w * w * (p.target - p.open) - 2 * w * p.vel) * dt;
+        const w = 1 / p.tau, c = 2 * BUD.zeta * w;                   // ζ < 1 -> overshoot
+        p.vel += (w * w * (p.target - p.open) - c * p.vel) * dt;
         p.open += p.vel * dt;
-        if (Math.abs(p.target - p.open) < 2e-3 && Math.abs(p.vel) < 2e-3) { p.open = p.target; p.vel = 0; }
-        else busy = true;
+        if (p.open > p.peak) p.peak = p.open;
+        // lắng: biên độ + vận tốc đều dưới ngưỡng, hoặc chốt cứng sau ~1 chu kỳ rưỡi
+        const done = Math.abs(p.target - p.open) < 3e-3 && Math.abs(p.vel) < 3e-3;
+        const timeout = now - p.tStart > 2.4 + 4 * p.tau;
+        if (done || timeout) { p.open = p.target; p.vel = 0; } else busy = true;
+        if (p.peak > peak) peak = p.peak;
       }
       syncOpen();
-      if (!busy) { state.anim = false; state.open = insts[0].open; }
+      state.peakOpen = peak;
+      if (!busy) { state.anim = false; state.open = insts[0].open; syncInputs(); }
+    }
+    if (t - statLast > 0.12) {                        // đọc đỉnh overshoot, throttle
+      statLast = t;
+      const el = $('bloomStat');
+      if (el) el.textContent = 'peak ' + (state.peakOpen || 0).toFixed(3) + ' → settle ' + insts[0].open.toFixed(3)
+        + (state.anim ? ' (đang chạy)' : '');
     }
     applyView();
     const k = worldPerPx() * 7;                  // tay nắm luôn ~7px bán kính ở mọi khoảng cách
