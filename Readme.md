@@ -35,6 +35,16 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
 
 - `/` — trang chính. Trạng thái tween/spin/màu/độ lật trắng đọc từ console:
   `window.flower.getState()` → `{ s, g, cam, fov, rot }` (s>1 = lò xo quá đà).
+- `debug/petal/` — soi một cánh, dáng cố định (dùng chung `shaders.glsl`).
+- `debug/petal_bud/` — orbit + sửa dáng cánh: kéo **Q0–Q3** và tay nắm **w1/w2** trên canvas,
+  số liệu Q nhập theo **hệ trục u** (`s` dọc trục, `t` ngang trục; `t=0` = điểm nằm trên trục), giữ
+  **Shift** khi kéo để chỉ trượt dọc trục; slider `w0/t1/t2/AXIS_ANG/N/M`.
+  Chế độ **Bụp (18 cánh)** chạy theo **bloom v3** — nở = duỗi cong, **không còn `uOpen`**: mỗi cánh mang
+  độ mở riêng (`iOpen`), nụ hình thành bằng `curl` (cung bảo toàn độ dài) + `wrap` + `tilt` (dựng cánh
+  quanh trục tiếp tuyến) + `base` (vành đế); nút **Nở/Khép** chạy 18 lò xo tới hạn (ζ=1, không nảy),
+  lớp ngoài trước, lệch nhịp theo seed. Slider `open` là kéo tay để so silhouette nụ ↔ nở.
+  Panel "Xuất ra main.js" in lại hằng số để paste; `window.petal` = `{ Q, W, AXIS, P, BUD, LAYERS, state, view, built, insts, U, rebuild, scrubOpen, bloomTo }`.
+  Nên chạy qua HTTP (`python -m http.server`); mở `file://` vẫn chỉnh được nhưng dùng material thay cho shader.
 
 
 ## TODO
@@ -52,6 +62,13 @@ Hình 2
 chọn font sao cho đừng nhìn như AI
 
 chạy được resolution > 2K
+
+tách logic từ main.js để mỗi file làm một việc
+
+hoa đang nở thì pause computing sin wave của cánh hoa, và wave theo gió
+
+đếm từ P0 tới P1 xem có bao nhiêu computing
+
 
 NỐI VỚI REACT
 NỐI VỚI REACT
