@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Fleur — hoa chìm trong nước</title>
+  <link rel="stylesheet" href="font/fonts.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Loading: nằm sẵn trong HTML để hiện ngay, không chờ 4 script CDN nối đuôi (~2.6s trên 3G) -->
+  <div class="loader" id="loader" role="status" aria-label="Đang tải">
+    <div class="loader-inner">
+      <p class="loader-mark">Fleur</p>
+      <p class="loader-sub">hoa chìm trong nước</p>
+      <div class="loader-bar" aria-hidden="true"><i id="loader-fill"></i></div>
+      <div class="loader-meta" aria-hidden="true">
+        <span class="loader-pct"><span id="loader-pct">00</span><span class="loader-sym">%</span></span>
+        <span class="loader-no">Étude — Nº 03</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Loader tự chạy tiến trình khi main.js chưa tới; main.js báo mốc thật qua window.__load(v).
+    (function () {
+      var de = document.documentElement, fill = document.getElementById('loader-fill');
+      var pct = document.getElementById('loader-pct');
+      de.classList.add('is-loading');
+      var block = function (e) { e.preventDefault(); };            // chặn cuộn khi còn loader
+      addEventListener('wheel', block, { passive: false });
+      addEventListener('touchmove', block, { passive: false });
+      window.__loadT0 = performance.now();
+      var p = 0, shown = -6, done = false, revealed = false, stopped = false;
+      function tick(now) {
+        if (stopped) return;
+        if (!done) {
+          var t = (now - window.__loadT0) / 1000;
+          var target = 88 * t / (t + 0.9);                          // bò tới ~88% nếu mạng chậm
+          if (target > p) p += (target - p) * 0.06;
+        }
+        shown += (p - shown) * 0.16;
+        if (shown > 99.6) shown = 100;
+        fill.style.transform = 'scaleX(' + (shown / 100).toFixed(4) + ')';
+        pct.textContent = shown >= 100 ? '100' : ('0' + Math.max(0, Math.floor(shown))).slice(-2);
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      window.__load = function (v) { if (v >= 100) done = true; if (v > p) p = v; };
+      window.__revealLoader = function (cb) {
+        if (revealed) { window.__revealMode = window.__revealMode || (cb ? 'app' : 'fallback'); cb && cb(); return; }
+        revealed = true; done = true; stopped = true;              // dừng ngay rAF của loader để không chạm DOM khi kéo rèm
+        window.__revealMode = cb ? 'app' : 'fallback';   // 'fallback' = tự mở khi chờ quá lâu; app sẽ chạy intro ngay khi hoa sẵn sàng
+        var el = document.getElementById('loader');
+        de.classList.remove('is-loading');
+        removeEventListener('wheel', block, { passive: false });
+        removeEventListener('touchmove', block, { passive: false });
+        if (!el) { cb && cb(); return; }
+        fill.style.transform = 'scaleX(1)';
+        pct.textContent = '100';
+        el.classList.add('is-done');
+        cb && cb();                                                 // intro hoa chạy cùng lúc curtain mở
+        setTimeout(function () { el.remove(); }, 1100);
+      };
+      // Script lỗi thật (404/mất mạng) -> mở loader sớm để đọc nội dung, không treo
+      addEventListener('error', function (e) {
+        var t = e.target;
+        if (!t || t.tagName !== 'SCRIPT' || revealed || done) return;
+        if (/(^|\/)(main|three\.min|gsap\.min|ScrollTrigger\.min|lenis\.min)\.js(\?|$)/.test(t.src || '') ||
+            (t.src || '').indexOf('/lib/') !== -1) {
+          setTimeout(function () { if (!revealed) window.__revealLoader(); }, 800);
+        }
+      }, true);
+      // Chốt an toàn rất dài: chỉ để không treo vĩnh viễn nếu mạng đứng hẳn.
+      // KHÔNG cắt ngang lúc đang tải 800KB (trước đây 9s làm loader tắt sớm).
+      setTimeout(function () {
+        if (revealed || done) return;
+        p = 100;
+        setTimeout(function () { window.__revealLoader(); }, 700);
+      }, 120000);
+    })();
+  </script>
+  <!-- <div class="orbit" aria-hidden="true"><div class="orbit-spin"><i class="sat"></i></div></div> -->
+  <div class="vignette" aria-hidden="true"></div>
+  <!-- <div class="frame" aria-hidden="true"></div> -->
+  <div class="daylight" aria-hidden="true"></div>
+  <main>
+    <section class="sec">
+      <p class="secno">01</p>
+      <h2 class="sectitle">Gốc</h2>
+      <blockquote class="verse">Vườn ai mướt quá xanh như ngọc<br>Lá trúc che ngang mặt chữ điền
+        <cite>Hàn Mặc Tử — Đây thôn Vĩ Dạ</cite>
+      </blockquote>
+    </section>
+    <section class="sec">
+      <p class="secno">02</p>
+      <h2 class="sectitle">Chìm</h2>
+      <blockquote class="verse">Nắng xuống, trời lên sầu chót vót<br>Sông dài, trời rộng, bến cô liêu
+        <cite>Huy Cận — Tràng giang</cite>
+      </blockquote>
+    </section>
+    <section class="sec">
+      <p class="secno">03</p>
+      <h2 class="sectitle">Xanh</h2>
+      <blockquote class="verse">Bèo dạt về đâu, hàng nối hàng<br>Mênh mông không một chuyến đò ngang
+        <cite>Huy Cận — Tràng giang</cite>
+      </blockquote>
+    </section>
+    <section class="sec">
+      <p class="secno">04</p>
+      <h2 class="sectitle">Tĩnh</h2>
+      <blockquote class="verse">Thuyền ai đậu bến sông trăng đó<br>Có chở trăng về kịp tối nay?
+        <cite>Hàn Mặc Tử — Đây thôn Vĩ Dạ</cite>
+      </blockquote>
+    </section>
+    <section class="sec">
+      <p class="secno">05</p>
+      <h2 class="sectitle">Sáng</h2>
+      <blockquote class="verse">Lớp lớp mây cao đùn núi bạc<br>Chim nghiêng cánh nhỏ: bóng chiều sa
+        <cite>Huy Cận — Tràng giang</cite>
+      </blockquote>
+    </section>
+  </main>
+  <!-- <header class="ui">
+    <div class="eyebrow">Étude — Nº 03</div>
+    <div class="year">MMXXVI</div>
+    <h1 class="headline">Fleur<span class="sub">hoa chìm trong nước</span></h1>
+    <div class="pageno"><span id="pno">01</span>&thinsp;—&thinsp;04</div>
+    <div class="hint">Cuộn để chìm xuống</div>
+  </header> -->
+
+  <div class="grain" aria-hidden="true"></div>
+  <script src="lib/three.min.js"></script>
+  <script src="lib/gsap.min.js"></script>
+  <script src="lib/ScrollTrigger.min.js"></script>
+  <script src="lib/lenis.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

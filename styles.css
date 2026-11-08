@@ -1,0 +1,120 @@
+:root{ --ink:#eae5f3; --hair:rgba(234,229,243,.16); }
+*{box-sizing:border-box}
+html,body{margin:0;background:#0d0d15}
+html{scrollbar-gutter:stable;-webkit-text-size-adjust:100%;text-size-adjust:100%}   /* giữ chỗ scrollbar từ đầu: reveal không reflow toàn trang (nguồn stutter trên màn 2x) */
+body{color:var(--ink);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent}
+::selection{background:rgba(122,90,248,.35)}
+
+/* ---------- Loading (agency-style): chữ + hairline + %, curtain trượt lên ---------- */
+html.is-loading{overflow:hidden}   /* chỉ khoá cuộn, không đổi scrollHeight -> ScrollTrigger đo đúng */
+.loader{position:fixed;inset:0;z-index:9;display:grid;place-items:center;background:#0d0d15;
+  transition:transform .8s cubic-bezier(.76,0,.24,1);will-change:transform}
+.loader.is-done{transform:translateY(-100%)}
+.loader-inner{display:grid;justify-items:center;gap:16px;padding:24px;text-align:center;
+  transition:opacity .4s ease,transform .7s cubic-bezier(.76,0,.24,1)}
+.loader.is-done .loader-inner{opacity:0;transform:translateY(-18px)}
+.loader-mark{margin:0;font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:300;
+  font-size:clamp(72px,12vw,168px);line-height:.9;letter-spacing:-.025em;color:var(--ink)}
+.loader-sub{margin:-2px 0 0;font:300 10px/1 Inter,system-ui,sans-serif;letter-spacing:.42em;
+  text-transform:lowercase;color:color-mix(in srgb,var(--ink) 46%,transparent)}
+.loader-bar{position:relative;width:min(220px,44vw);height:1px;margin-top:10px;
+  background:rgba(234,229,243,.16);overflow:hidden}
+.loader-bar i{position:absolute;inset:0;display:block;transform-origin:0 50%;transform:scaleX(0);
+  background:var(--ink);will-change:transform}
+.loader-meta{display:flex;align-items:baseline;gap:16px;width:min(320px,62vw);
+  color:color-mix(in srgb,var(--ink) 46%,transparent)}
+.loader-pct{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:300;
+  font-size:clamp(28px,3.2vw,44px);line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums;
+  color:var(--ink)}
+.loader-sym{font-style:normal;font-size:.62em;margin-left:.06em;letter-spacing:.02em;opacity:.8}
+.loader-no{margin-left:auto;font:300 9px/1 Inter,system-ui,sans-serif;letter-spacing:.3em;text-transform:uppercase}
+canvas{position:fixed;inset:0;display:block;z-index:1;opacity:1;transition:opacity .5s ease}   /* canvas TRÊN .daylight — nền trắng ở dưới, hoa không bị che */
+/* Sections: cuộn bình thường (không pin) — canvas fixed phía sau, chữ trôi qua */
+.sec{min-height:100vh;min-height:100svh;position:relative;z-index:4;display:grid;align-content:center;
+  padding:0 max(56px,8vw) 0;gap:10px}
+.secno{margin:0;font:300 10px/1 Inter,system-ui,sans-serif;letter-spacing:.34em;
+  color:color-mix(in srgb,var(--ink) 46%,transparent)}
+.sectitle{margin:0;font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:500;
+  font-size:clamp(44px,7vw,96px);line-height:1;letter-spacing:-.01em;color:var(--ink)}
+.sectext{margin:0 0 0 2px;max-width:42ch;font:300 14px/1.7 Inter,system-ui,sans-serif;
+  color:color-mix(in srgb,var(--ink) 66%,transparent)}
+/* Verse: câu thơ thật mỗi section — chữ Cormorant nghiêng, mờ dần trôi lên khi section vào/ra khung nhìn */
+.verse{margin:14px 0 0 2px;max-width:38ch;color:var(--ink);
+  font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:400;
+  font-size:clamp(22px,2.6vw,34px);line-height:1.62;letter-spacing:.01em}
+.verse cite{display:block;margin-top:16px;font:300 10px/1 Inter,system-ui,sans-serif;letter-spacing:.3em;
+  font-style:normal;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 40%,transparent)}
+.verse{opacity:0;transform:translateY(22px);
+  transition:opacity 1.5s ease .25s,transform 1.5s cubic-bezier(.16,.8,.24,1) .25s}
+.sec.vin .verse{opacity:1;transform:none}
+/* Chữ "mọc" theo ký tự: nhoè -> rõ, trôi nhẹ như bọt nước (stagger delay đặt inline trong main.js) */
+.sectitle .ch{display:inline-block;opacity:0;transform:translateY(.3em) rotate(4deg);filter:blur(7px);
+  transition:opacity 1.1s ease,transform 1.1s cubic-bezier(.22,.9,.26,1),filter 1.1s ease;will-change:filter,transform}
+.sec.vin .sectitle .ch{opacity:1;transform:none;filter:blur(0)}
+/* Lật trắng (section 4 -> section 5): nền trắng DƯỚI canvas (z-index 0 < canvas 1) — chỉ đổi màu bg, hoa vẫn nguyên */
+.daylight{position:fixed;inset:0;z-index:0;pointer-events:none;background:#f5f4f0;opacity:0}
+/* Gợn caustics giờ là QUAD SHADER trong WebGL (rẻ hơn hạt & CSS): alpha theo dayBlend, xem main.js */
+/* Lenis smooth scroll */
+html.lenis,html.lenis body{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto!important}
+.sec:nth-child(even){justify-items:end;text-align:right}
+.sec:nth-child(even) .sectext{margin:2px 2px 0 0}#scroll{height:0}
+
+/* Khung viền in: hai đường hairline lồng nhau, như bìa sách cao cấp */
+.frame{position:fixed;inset:26px;border:1px solid var(--hair);pointer-events:none;z-index:3}
+.frame::after{content:'';position:absolute;inset:6px;border:1px solid rgba(234,229,243,.05)}
+
+/* Vòng quỹ đạo chậm: ellipse hairline + vệ tinh nhỏ, 150s/vòng */
+.orbit{position:fixed;left:50%;top:50%;width:min(88vmin,780px);aspect-ratio:1;
+  transform:translate(-50%,-50%) rotate(-11deg) scaleY(.8);pointer-events:none;z-index:1}
+.orbit::before{content:'';position:absolute;inset:0;border:1px solid rgba(234,229,243,.10);border-radius:50%}
+.orbit::after{content:'';position:absolute;inset:9%;border:1px solid rgba(234,229,243,.05);border-radius:50%}
+.orbit-spin{position:absolute;inset:0;animation:spin 150s linear infinite}
+.sat{position:absolute;left:50%;top:-3px;width:5px;height:5px;border-radius:50%;background:var(--ink);opacity:.8;
+  transform:scaleY(1.25);box-shadow:0 0 14px 2px rgba(234,229,243,.30)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Lớp chữ: micro-label giãn chữ, headline serif nghiêng lớn */
+.ui{position:fixed;inset:0;pointer-events:none;z-index:4}
+.eyebrow{position:fixed;top:54px;left:58px;font:300 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.38em;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 66%,transparent)}
+.eyebrow::before{content:'';display:inline-block;width:34px;height:1px;background:currentColor;opacity:.55;
+  vertical-align:middle;margin-right:14px}
+.year{position:fixed;top:54px;right:58px;font:300 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.38em;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 66%,transparent)}
+.headline{position:fixed;left:56px;bottom:15vh;margin:0;font-family:'Cormorant Garamond',Georgia,serif;
+  font-weight:500;font-style:italic;font-size:clamp(72px,13vw,164px);line-height:.92;letter-spacing:-.015em;color:var(--ink)}
+.headline .sub{display:block;margin-top:14px;font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;
+  font-weight:300;font-size:clamp(15px,1.6vw,20px);letter-spacing:.22em;text-transform:lowercase;
+  color:color-mix(in srgb,var(--ink) 72%,transparent)}
+.hint{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);font:300 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.34em;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 60%,transparent);
+  animation:breathe 3.4s ease-in-out infinite;pointer-events:none}
+@keyframes breathe{0%,100%{opacity:.45}50%{opacity:.95}}
+.pageno{position:fixed;right:58px;bottom:40px;font:300 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.3em;color:color-mix(in srgb,var(--ink) 60%,transparent);font-variant-numeric:tabular-nums}
+
+/* Sâu thẳm: vignette tối dần ra rìa, grain phim phủ trên cùng */
+.vignette{position:fixed;inset:0;pointer-events:none;z-index:2;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(4,4,9,.55) 100%)}
+.grain{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+@media (max-width:640px){
+  /* Mobile: chừa lề an toàn cho tai thỏ, bớt padding ngang để câu thơ không gãy vụn */
+  .sec{min-height:100vh;min-height:100svh;
+    padding:0 max(24px,env(safe-area-inset-right)) 0 max(24px,env(safe-area-inset-left));gap:12px}
+  .secno{font-size:9px;letter-spacing:.3em}
+  .sectitle{font-size:clamp(38px,11vw,56px)}
+  .verse{font-size:clamp(19px,5.4vw,24px);line-height:1.68;max-width:100%}
+  .verse cite{margin-top:14px;font-size:9px;letter-spacing:.24em}
+  .frame{inset:16px}
+  .eyebrow{top:34px;left:34px}
+  .year{display:none}
+  .headline{left:30px;bottom:18vh}
+  .pageno{right:max(24px,env(safe-area-inset-right))}
+  /* Section 01 trên mobile: text bắt đầu ở top 25%, nhường nửa dưới cho hoa ở góc phải */
+  .sec:first-child{align-content:start;
+    padding-top:max(25svh,calc(env(safe-area-inset-top) + 26px))}
+}

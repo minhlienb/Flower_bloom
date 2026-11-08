@@ -1,0 +1,1 @@
+lỗi jank giật lên xuống trên mobile do thanh addressbar có thể là do thẻ <canvas> không được lock, thử lock lại rồi chạy debug
