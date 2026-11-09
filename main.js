@@ -28,18 +28,9 @@ const FLOW = {
 // Hệ số nhân cho xung cuộn trước khi vào khâu làm mượt. >1 = cùng một cú cuộn cho dòng mạnh hơn
 // mà không phải sửa các hằng số ở trên; đặt 1 để quay lại đúng cảm giác cũ.
 const SCROLL_GAIN = 1.35;
-// Intro sau loader: hoa trồi từ dưới lên, xoay nhẹ và nở dần về đúng P0.
-// k = 1 ở P(-1) -> 0 ở P0, cộng dồn vào công thức P0 nên kết thúc không lệch anchor.
-const INTRO = {
-  dur: 1.8,                 // giây: đích smoothstep chạy 0 -> 1, sau đó lag mũ trôi tiếp về P0
-  drop: 230,                // thấp hơn P0 (world units) lúc bắt đầu
-  rx: 0.11, ry: 0.38,       // nghiêng ở P(-1)
-  zoom: 0.15,               // camera xa hơn 15% ở P(-1) -> búp hoa nhỏ hơn, gần hơn khi kết thúc
-  open: 0.35,               // độ mở của hoa lúc bắt đầu (0..1) — bud khép hơn để thấy rõ bung từ trong ra
-  spin: 2,                  // rad: xoay nhẹ 2 rad quanh thân hoa trong lúc nở (như P_SPIN.rad của P0->P1)
-  lag: 2.0,                 // = P_SPIN.lag: lag mũ 1 bậc, không quá đà -> cùng "sức nặng" với P0->P1
-  openLag: 3.2,             // bung nở cũng lọc lag mũ (không lò xo) nhưng nhanh hơn xoay một nhịp
-};
+// P(-1) ≡ P1: intro KHÔNG còn pose riêng. Hoa khởi động đúng bằng trạng thái P1
+// (camera fit, spin đã đủ 2 rad, open = 1) rồi để chính lò xo P_TWEEN + lag P_SPIN hạ về P0 —
+// cùng một code path với lúc cuộn ngược từ cuối trang lên đầu, nên hai đường đi không thể lệch nhau.
 // Lớp nền khi idle: sóng phấp phới chậm hơn trước. Khi cuộn, trọng số giảm dần để dòng nước chiếm ưu thế.
 const WIND = { amp: 46, period: 3.4, fadeOnScroll: 0.6 };
 // Quỹ đạo tự thân khi idle: hoa trôi rất chậm trên đường ellipse + "thở" scale — như vật thể lơ lửng.
@@ -376,7 +367,7 @@ async function initScene(shaders) {
   const PR_BUDGET = 5.8e6;                            // ~5.8 triệu điểm ảnh canvas để giữ 120 FPS
   const dprCap = (w, h) => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt(PR_BUDGET / Math.max(1, w * h))));
   renderer.setPixelRatio(dprCap(innerWidth, innerHeight));
-  renderer.domElement.style.opacity = '0';   // chỉ hiện khi begin(): tránh nháy hoa ở P0 trước khi intro chạy
+  renderer.domElement.style.opacity = '0';   // chỉ hiện khi begin(): tránh nháy hoa ở P1 trước khi curtain mở
   document.body.appendChild(renderer.domElement);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(35, 1, 10, 4000);
   camera.position.set(P0.cam.x, P0.cam.y, P0.cam.z); camera.fov = P0.cam.fov;  // boot thẳng vào P0
@@ -408,17 +399,17 @@ async function initScene(shaders) {
   addEventListener('scroll', onScroll, { passive: true });
   const col = (h) => ({ value: new THREE.Color(h) });
   const U = {
-    uOpen: { value: INTRO.open }, uAmp: { value: FLOW.amp }, uEnergy: { value: 0 }, uPhase: { value: 0 }, uDrift: { value: 0 },
+    uOpen: { value: 1 }, uAmp: { value: FLOW.amp }, uEnergy: { value: 0 }, uPhase: { value: 0 }, uDrift: { value: 0 },
     uTime: { value: 0 }, uWind: { value: 1 }, uLmax: { value: G.lmax }, uAxis: { value: new THREE.Vector2(G.ax[0], G.ax[1]) },
     uGdir: { value: new THREE.Vector2(320, 410).normalize() },
     uLight: { value: new THREE.Vector2(Math.cos(LIGHT.angle * Math.PI / 180), Math.sin(LIGHT.angle * Math.PI / 180)) },
     uLightK: { value: new THREE.Vector3(LIGHT.tone, LIGHT.hi, LIGHT.alpha) },
     uC0: col(PAL.ramp[0]), uC1: col(PAL.ramp[1]), uC2: col(PAL.ramp[2]), uC3: col(PAL.ramp[3]), uC4: col(PAL.ramp[4]), uDeep: col(PAL.deep),
   };
-  G.rebuildOpen(INTRO.open);                          // dựng sẵn ở tư thế nụ P(-1) trước khi kéo rèm -> không giật ở frame đầu
-  // Chỉ bake lại iRot khi độ mở thật sự đổi: intro chạy 60-120 frame nhưng lúc lắng/đứng yên thì
-  // không upload attribute mỗi frame (tránh CPU/GPU work vô ích, không gây stutter).
-  let bakedOpen = INTRO.open;
+  G.rebuildOpen(1);                                   // hoa mở sẵn ngay frame đầu: P(-1) ≡ P1
+  // Chỉ bake lại iRot khi độ mở thật sự đổi (setOpen/debug): lúc chạy bình thường độ mở là hằng số
+  // nên không upload attribute mỗi frame (tránh CPU/GPU work vô ích, không gây stutter).
+  let bakedOpen = 1;
   const bakeOpen = (v, force = false) => {
     if (!force && Math.abs(v - bakedOpen) < 5e-4) return;
     bakedOpen = v; U.uOpen.value = v; G.rebuildOpen(v);
@@ -613,22 +604,25 @@ async function initScene(shaders) {
 
   const rest = FLOW.restEnergy;
   let energy = 0, phase = 0, drift = 0, driftVel = 0;
-  let scrollBlend = 0, scrollVel = 0;   // lerp P0->P1 (getState) + vận tốc lò xo — 0 = đang đứng Р0 khi load (P0 là mặc định)
+  let scrollBlend = 1, scrollVel = 0;   // 0 = P0, 1 = P1. Load ra ở 1 -> lò xo tự hạ về P0 (đúng đường P1->P0)
   let tiltX = 0, tiltY = 0;             // base nghiêng (chuột + offset P0) — trước khi cộng spin
-  let spinProg = 0;                     // tiến trình xoay riêng: lag mũ, không quá đà (quán tính không lùi)
+  let spinProg = 1;                     // tiến trình xoay riêng: lag mũ, không quá đà (quán tính không lùi)
   let colorBlend = 0, colorVel = 0;     // lò xo cho lerp màu P1->P2: đổi chậm, chút quá đà rồi lắng
   let skew = 0, lastY = scrollY, lastSkewT = '';  // A3: chữ nghiêng theo vận tốc cuộn, lắng mượt
   let vinKey = '';                      // .vin theo tâm section: đổi chỉ khi trạng thái đổi (không churn style)
   let dayBlend = 0, dayOn = false;      // lật trắng sec4->sec5 (lag mũ, không quá đà); caustics = quad shader (cauU.uDay)
   const daylight = document.querySelector('.daylight');
   const clock = new THREE.Clock();
-  // ---- Intro sau loader: bắt đầu đúng lúc curtain bắt đầu mở ----
-  let introT0 = -1, introDone = false;
+  // ---- Hạ cánh P(-1) -> P0: bắt đầu đúng lúc curtain mở ----
+  // P(-1) ≡ P1, nên "intro" chỉ còn là: giữ nguyên trạng thái P1 tới lúc reveal, rồi thả lò xo
+  // P_TWEEN + lag P_SPIN hạ về P0 — y hệt lúc cuộn ngược từ cuối trang lên đầu.
+  let begun = false, arrived = false;
   const begin = () => {
-    if (introT0 >= 0) return;
-    introT0 = clock.elapsedTime;
-    introWall = performance.now();
-    ifRec = true; ifI = 0; ifCount = 0; ifMaxMs = 0; ifMaxAt = 0;   // bắt đầu đo frame time riêng của intro
+    if (begun) return;
+    begun = true;
+    scrollBlend = 1; scrollVel = 0; spinProg = 1;        // chốt đúng trạng thái P1 tại thời điểm reveal
+    arrWall = performance.now();
+    arrRec = true; arrI = 0; arrCount = 0; arrMaxMs = 0; arrMaxAt = 0;   // đo frame time riêng của lúc hạ cánh
     document.documentElement.classList.remove('is-loading');
     renderer.domElement.style.opacity = '1';            // canvas hiện dần cùng lúc curtain mở
     lenis?.start();
@@ -636,21 +630,16 @@ async function initScene(shaders) {
   };
   let firstFrameResolve, firstFrame = false;
   const ready = new Promise((res) => { firstFrameResolve = res; });
-  let introK = 0;                                     // 1 ở P(-1) -> 0 ở P0 (đọc được từ getState để debug)
-  let rotK = 0;                                       // envelope xoay riêng: giảm chậm hơn introK -> còn xoay khi cánh đang nở
-  let introSpin = 0;                                  // xoay nhẹ 2 rad quanh thân hoa trong lúc nở
-  let introSpinProg = 0;                              // 0 -> 1 bằng lag mũ 1 bậc (y hệt P0->P1), không quá đà
-  let openProg = 0;                                   // 0 -> 1 bằng lag mũ 1 bậc; nở mượt, không lò xo/nhấp nháy
-  let introSettled = false, p0kCur = 1;
+  let p0kCur = 1;
 
   // ---- Debug stats (GIỮ LẠI): frame time + rect element, thay cho việc quay video ----
   // Dùng: window.flower.stats()  |  mở ?stats=1 để xem HUD góc dưới-trái.
   // stats(false) là bản nhẹ cho HUD: không đọc layout/rect -> chính HUD không tạo jank khi debug.
   const FT_N = 240, ftBuf = new Float32Array(FT_N);
   let ftI = 0, ftCount = 0, ftLast = 0, hudLast = 0;
-  const IF_N = 900, ifBuf = new Float32Array(IF_N);    // frame time RIÊNG của intro (đo đúng lúc hoa nở)
-  let ifI = 0, ifCount = 0, ifRec = false;
-  let introWall = 0, ifMaxMs = 0, ifMaxAt = 0;         // thời điểm frame tệ nhất trong intro (ms kể từ reveal)
+  const ARR_N = 900, arrBuf = new Float32Array(ARR_N);   // frame time RIÊNG của đoạn hạ cánh P1->P0 (đo đúng lúc reveal)
+  let arrI = 0, arrCount = 0, arrRec = false;
+  let arrWall = 0, arrMaxMs = 0, arrMaxAt = 0;         // thời điểm frame tệ nhất lúc hạ cánh (ms kể từ reveal)
   const pctl = (arr, p) => arr.length ? arr[Math.max(0, Math.min(arr.length - 1, Math.round(p * (arr.length - 1))))] : 0;
   const summarize = (buf, count, cap) => {
     const n = Math.min(count, cap);
@@ -666,9 +655,9 @@ async function initScene(shaders) {
   };
   const ftPush = (ms) => {
     ftBuf[ftI] = ms; ftI = (ftI + 1) % FT_N; if (ftCount < FT_N) ftCount++;
-    if (ifRec) {
-      ifBuf[ifI] = ms; ifI = (ifI + 1) % IF_N; if (ifCount < IF_N) ifCount++;
-      if (ms > ifMaxMs) { ifMaxMs = ms; ifMaxAt = Math.round(performance.now() - introWall); }
+    if (arrRec) {
+      arrBuf[arrI] = ms; arrI = (arrI + 1) % ARR_N; if (arrCount < ARR_N) arrCount++;
+      if (ms > arrMaxMs) { arrMaxMs = ms; arrMaxAt = Math.round(performance.now() - arrWall); }
     }
   };
   const rectOf = (sel) => {
@@ -688,12 +677,12 @@ async function initScene(shaders) {
   };
   const stats = (full = true) => {
     const ft = summarize(ftBuf, ftCount, FT_N);
-    const ift = summarize(ifBuf, ifCount, IF_N);
+    const arrt = summarize(arrBuf, arrCount, ARR_N);
     return {
       frames: ft.n, fps: ft.fps, avg: ft.avg, p50: ft.p50, p95: ft.p95, p99: ft.p99, max: ft.max,
       jank: ft.jank, drop: ft.drop,
-      introFt: { ...ift, maxAt: ifMaxAt },               // maxAt: frame tệ nhất rơi vào lúc nào (ms từ reveal)
-      intro: { k: +introK.toFixed(3), rot: +rotK.toFixed(3), spin: +(INTRO.spin * introSpinProg).toFixed(3), open: +U.uOpen.value.toFixed(3), done: introDone, settled: introSettled },
+      arrivalFt: { ...arrt, maxAt: arrMaxAt },            // maxAt: frame tệ nhất rơi vào lúc nào (ms từ reveal)
+      arrival: { begun, arrived, spin: +spinProg.toFixed(3), open: +U.uOpen.value.toFixed(3) },
       scroll: { y: Math.round(scrollY), max: Math.round(scrollMax), blend: +scrollBlend.toFixed(3) },
       vp: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
       ...(full ? {
@@ -714,35 +703,6 @@ async function initScene(shaders) {
     if (ftLast) ftPush(nowMs - ftLast);              // frame time thật (không bị clamp như dt mô phỏng)
     ftLast = nowMs;
     const dt = Math.min(clock.getDelta(), 0.05);
-    // P(-1) -> P0: trồi + nghiêng + nở + xoay 2 rad. Phần xoay dùng ĐÚNG công thức lag mũ của
-    // P0->P1 (P_SPIN): đích smoothstep rồi lọc 1-exp(-dt*lag) -> nặng, không overshoot, không giật.
-    if (introT0 >= 0 && !introSettled) {
-      const ip = Math.min(1, (clock.elapsedTime - introT0) / INTRO.dur);
-      if (!introDone && (ip >= 1 || scrollY > 8)) introDone = true;
-      const skip = introDone && ip < 1;                 // cuộn giữa intro: tắt nhanh nhưng vẫn mượt, không snap
-      if (!introDone) {
-        const ipr = Math.max(0, Math.min(1, (ip - 0.12) / 0.88));   // 0 trong 0.12s đầu
-        introK = Math.pow(1 - ipr, 3);                  // trồi lên: ease-out cubic
-        rotK = 1 - smoothstep(0, 1, ip);                // nghiêng rx/ry trải đều
-      } else if (skip) {
-        introK *= Math.exp(-dt * 6);                    // không zero đột ngột -> không nhảy vị trí khi cuộn
-        rotK *= Math.exp(-dt * 6);
-      } else { introK = 0; rotK = 0; }
-      // Đích giống P0->P1: smoothstep; khi introDone thì đích = 1 và lag tiếp tục trôi tới sát 1.
-      const spinTarget = introDone ? 1 : smoothstep(0, 0.85, ip);
-      const openTarget = introDone ? 1 : smoothstep(0.05, 0.9, ip);
-      introSpinProg += (spinTarget - introSpinProg) * (1 - Math.exp(-dt * (skip ? 9 : INTRO.lag)));
-      openProg += (openTarget - openProg) * (1 - Math.exp(-dt * (skip ? 9 : INTRO.openLag)));
-      bakeOpen(INTRO.open + (1 - INTRO.open) * Math.min(1, Math.max(0, openProg)));
-      // Chốt đúng P0 khi đã sát đích (sai số < 0.002: 0.4% độ mở / 0.23° xoay — mắt không thấy),
-      // rồi dừng hẳn cập nhật attribute để không còn CPU/GPU work sau intro.
-      if (introDone && 1 - introSpinProg < 0.002 && 1 - openProg < 0.002) {
-        introSettled = true; introSpinProg = 1; openProg = 1;
-        introK = 0; rotK = 0; ifRec = false;
-        bakeOpen(1, true);
-      }
-    }
-    introSpin = INTRO.spin * (introSpinProg - 1);        // -2 -> 0 rad (tổng +2 rad), kết thúc đúng P0.rz
     const target = kick, mag = Math.abs(target); kick *= Math.exp(-dt * FLOW.kickDecay);
     energy += (mag - energy) * (1 - Math.exp(-dt * (mag > energy ? FLOW.attack : FLOW.decay)));
     driftVel += (SPRING.k * (target - drift) - SPRING.c * driftVel) * dt; drift += driftVel * dt;
@@ -789,11 +749,13 @@ async function initScene(shaders) {
       document.documentElement.classList.toggle('day', day);
       document.documentElement.style.setProperty('--ink', day ? '#14151f' : PAL.ink);
     }
-    const sTarget = smoothstep(0, 1 / 4, f);       // 0 = đang ở P0, 1 = đã về P1 (đến section 2 = f 1/4 — layout 5 section)
+    // Chưa mở rèm thì đích = 1 (giữ nguyên P1) -> load ra đúng trạng thái P1, sau reveal lò xo mới hạ về P0.
+    const sTarget = begun ? smoothstep(0, 1 / 4, f) : 1;   // 0 = P0, 1 = P1 (hết section 2 = f 1/4 — layout 5 section)
     scrollVel += (P_TWEEN.k * (sTarget - scrollBlend) - P_TWEEN.c * scrollVel) * dt;
     scrollBlend += scrollVel * dt;
     // lắng hẳn khi gần đích để không nhún nhảy vô hạn quanh 0/1
     if (Math.abs(sTarget - scrollBlend) < 0.0008 && Math.abs(scrollVel) < 0.002) { scrollBlend = sTarget; scrollVel = 0; }
+    if (begun && !arrived && sTarget === 0 && scrollBlend === 0 && scrollVel === 0) { arrived = true; arrRec = false; }  // hạ cánh xong: ngừng đo
     const s = 1 - scrollBlend;
     // Màu: section 2->3 (f: 1/3 -> 1/2) lerp toàn bộ bảng màu shader về #0051ff.
     // g chạy qua lò xo P_CSWEEP: đổi muộn một nhịp, hơi vượt rồi lắng — cảm giác "chìm đậm" nặng khi hai đầu khôi phục
@@ -807,17 +769,15 @@ async function initScene(shaders) {
       U.uDeep.value.copy(PAL_T.deep.a).lerp(PAL_T.deep.b, g);
       ['halo', 'mid', 'core', 'streak'].forEach((k, i) => glowU['u' + k[0].toUpperCase() + k.slice(1)].value.copy(PAL_T.glow[i].a).lerp(PAL_T.glow[i].b, g));
     }
-    // P0 responsive: màn hẹp zoom ra theo bề ngang hoa (dùng chung cho intro lẫn camera)
+    // P0 responsive: màn hẹp zoom ra theo bề ngang hoa (dùng chung cho cả hạ cánh lẫn camera)
     p0kCur = Math.max(1, (FRAME.flowerW / FRAME.p0Fill)
       / (2 * Math.tan(THREE.MathUtils.degToRad(P0.cam.fov / 2)) * camera.aspect) / FRAME.p0Dist);
     {
       const t = clock.elapsedTime, TAU = Math.PI * 2;
       group.position.x = Math.sin(t * TAU / ORBIT.px) * ORBIT.rx;
-      group.position.y = Math.cos(t * TAU / ORBIT.py) * ORBIT.ry + (P0.py - P1.py) * s
-                       - INTRO.drop * p0kCur * (p0kCur < 1.5 ? 1.35 : 1) * introK;   // P(-1): hoa thấp hơn; màn ngang nhấn độ trồi
+      group.position.y = Math.cos(t * TAU / ORBIT.py) * ORBIT.ry + (P0.py - P1.py) * s;
       group.rotation.z = Math.sin(t * TAU / ORBIT.pz) * ORBIT.rz + (P0.rz - P1.rz) * s
-                       + (P_SPIN.axis === 'z' ? P_SPIN.rad * spinProg : 0)
-                       + introSpin;                    // introSpin: +2 rad quanh thân -> kết thúc đúng P0.rz
+                       + (P_SPIN.axis === 'z' ? P_SPIN.rad * spinProg : 0);
       group.scale.setScalar((1 + ORBIT.breathe * Math.sin(t * TAU / ORBIT.pb)) * (1 + (P0.scale - P1.scale) * s));
     }
     // nghiêng chuột: cộng offset của P0 vào đích lerp, offset tàn dần khi cuộn về P1
@@ -829,29 +789,23 @@ async function initScene(shaders) {
     if (P_SPIN.axis === 'y') { group.rotation.y = tiltY + P_SPIN.rad * spinProg; group.rotation.x = tiltX; }
     else if (P_SPIN.axis === 'x') { group.rotation.x = tiltX + P_SPIN.rad * spinProg; group.rotation.y = tiltY; }
     else { group.rotation.x = tiltX; group.rotation.y = tiltY; }
-    if (rotK) {                                            // P(-1): nghiêng/xoay nhẹ, về 0 ở P0
-      group.rotation.x += INTRO.rx * rotK;
-      group.rotation.y += INTRO.ry * rotK;
-    }
     // camera: P0 (cận cảnh, neo góc dưới-phải) -> P1 (mặc định fit)
     const camDefZ = frameZ(camera.aspect);
-    // p0kCur: màn hẹp zoom ra theo bề ngang hoa (tính ở trên, dùng chung với intro)
-    const arrive = 1 + INTRO.zoom * introK;            // camera lùi ra ở P(-1), tiến vào P0
-    camera.position.x = THREE.MathUtils.lerp(P0.cam.x * p0kCur * arrive, P1.cam.x, 1 - s);
-    camera.position.y = THREE.MathUtils.lerp(P0.cam.y * p0kCur * arrive, P1.cam.y, 1 - s);
-    camera.position.z = THREE.MathUtils.lerp(P0.cam.z * p0kCur * arrive, P1.cam.z ?? camDefZ, 1 - s);
+    // p0kCur: màn hẹp zoom ra theo bề ngang hoa
+    camera.position.x = THREE.MathUtils.lerp(P0.cam.x * p0kCur, P1.cam.x, 1 - s);
+    camera.position.y = THREE.MathUtils.lerp(P0.cam.y * p0kCur, P1.cam.y, 1 - s);
+    camera.position.z = THREE.MathUtils.lerp(P0.cam.z * p0kCur, P1.cam.z ?? camDefZ, 1 - s);
     const fovNow = THREE.MathUtils.lerp(P0.cam.fov, P1.cam.fov, 1 - s);
     if (fovNow !== camera.fov) { camera.fov = fovNow; camera.updateProjectionMatrix(); }   // tránh cập nhật matrix mỗi frame khi fov không đổi
-    // LookAt cũng nhân `arrive`: camera lùi đúng trục nhìn -> zoom thuần, không bị trượt khung
-    camera.lookAt(THREE.MathUtils.lerp(p0Look.x * arrive, P1.cam.lookX, 1 - s), THREE.MathUtils.lerp(p0Look.y * arrive, P1.cam.lookY, 1 - s), 0);
+    camera.lookAt(THREE.MathUtils.lerp(p0Look.x, P1.cam.lookX, 1 - s), THREE.MathUtils.lerp(p0Look.y, P1.cam.lookY, 1 - s), 0);
     renderer.render(scene, camera);
     if (!firstFrame) { firstFrame = true; firstFrameResolve(); }   // frame đầu đã vẽ -> loader được phép đóng
     if (hud && nowMs - hudLast > 400) {
       hudLast = nowMs;
       const s = stats(false);                          // bản nhẹ: không đọc layout -> HUD không tự gây jank
       hud.textContent = `fps ${s.fps}  ft ${s.avg}  p95 ${s.p95}  p99 ${s.p99}  max ${s.max}  jank ${(s.jank * 100).toFixed(0)}%\n`
-        + `intro ft p95 ${s.introFt.p95}  max ${s.introFt.max}@${(s.introFt.maxAt / 1000).toFixed(1)}s  n ${s.introFt.n}\n`
-        + `intro k ${s.intro.k} rot ${s.intro.rot} spin ${s.intro.spin} open ${s.intro.open} ${s.intro.settled ? 'settled' : s.intro.done ? 'settling' : 'run'}\n`
+        + `arrival ft p95 ${s.arrivalFt.p95}  max ${s.arrivalFt.max}@${(s.arrivalFt.maxAt / 1000).toFixed(1)}s  n ${s.arrivalFt.n}\n`
+        + `arrival begun ${s.arrival.begun ? 'y' : 'n'} settled ${s.arrival.arrived ? 'y' : 'n'} spin ${s.arrival.spin} open ${s.arrival.open}\n`
         + `scroll ${s.scroll.y}/${s.scroll.max}  blend ${s.scroll.blend}  ${s.vp.w}x${s.vp.h}`;
     }
   });
@@ -863,13 +817,12 @@ async function initScene(shaders) {
     renderer.dispose(); renderer.domElement.remove();
   };
   window.flower = { U, glowU, dustU, cauU, renderer, cauRT, glowTex, dustSprite, camera, group, p0Look,
-    intro: INTRO,                                        // debug/tinh chỉnh: window.flower.intro.drop = ...
     setOpen: (v) => bakeOpen(v, true), dispose,
     // Đo NDC mép hoa (dùng hull dáng nghỉ) — kiểm tra neo bottom 5% / right -5%
     ndcBounds,
-    // Debug (giữ lại): frame time + vị trí element + trạng thái intro/scroll
+    // Debug (giữ lại): frame time + vị trí element + trạng thái hạ cánh/scroll
     stats,
-    getState: () => ({ s: +scrollBlend.toFixed(3), g: +colorBlend.toFixed(3), cam: camera.position.toArray().map(v => +v.toFixed(1)), fov: camera.fov, rot: [group.rotation.x, group.rotation.y, group.rotation.z].map(v => +v.toFixed(3)), introK: +introK.toFixed(3), rotK: +rotK.toFixed(3), spin: +(INTRO.spin * introSpinProg).toFixed(3), open: +U.uOpen.value.toFixed(3), introDone, introSettled }) };
+    getState: () => ({ s: +scrollBlend.toFixed(3), g: +colorBlend.toFixed(3), cam: camera.position.toArray().map(v => +v.toFixed(1)), fov: camera.fov, rot: [group.rotation.x, group.rotation.y, group.rotation.z].map(v => +v.toFixed(3)), spin: +spinProg.toFixed(3), open: +U.uOpen.value.toFixed(3), begun, arrived }) };
   return { ready, begin, measure: measureLayout };
 }
 
@@ -901,7 +854,7 @@ async function initScene(shaders) {
     console.error('Không khả thi:', err);            // vẫn phải mở loader, không treo trang
   }
   prog(100);
-  // Loader đã tự mở trước khi app sẵn sàng: chạy intro ngay khi frame đầu vẽ xong (canvas còn ẩn -> không nháy P0)
+  // Loader đã tự mở trước khi app sẵn sàng: thả lò xo P1->P0 ngay khi frame đầu vẽ xong (canvas còn ẩn -> không nháy)
   if (window.__revealMode === 'fallback') { if (app) app.begin(); return; }
   // Thanh chỉ chạy 100 ở đoạn cuối: tránh cảnh đứng ở 99% suốt thời gian chờ min-display.
   const elapsed = performance.now() - t0;
