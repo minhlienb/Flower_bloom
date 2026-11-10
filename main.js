@@ -77,7 +77,7 @@ const THEMES = [
     glow: { halo: '#005f66', mid: '#00b39a', core: '#7ff0dd', streak: '#c8fff4' },
     tone: '#00231f', toneA: 0.6, paper: 0 },
   { ...PALETTES.warm, tone: '#2a1206', toneA: 0.6, paper: 0 },
-  { ...PALETTES.warm, tone: '#f5f4f0', toneA: 0.0, paper: 1 },
+  { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#f5f4f0', toneA: 0.0, paper: 1 },  // giấy: hoa vẫn xanh như ảnh tham chiếu
 ];
 // Ánh sáng có hướng: ảnh B sáng dần về phía trên-phải (~43° theo hồi quy độ sáng), tối dần về dưới-trái.
 const LIGHT = { angle: 43, tone: 0.25, hi: 0.18, alpha: 0.2 };  // góc (độ); độ ngả tông đậm; độ sáng thêm; chênh độ đậm nét
@@ -829,6 +829,8 @@ async function initScene(shaders) {
     // Nền sáng (giấy) = theme.paper, giữ lag mũ như cũ cho caustics/dust
     const paperT = THEMES[thI].paper + (THEMES[thI + 1].paper - THEMES[thI].paper) * thT;
     dayBlend += (paperT - dayBlend) * (1 - Math.exp(-dt * 2));
+    // Chốt đúng đích khi đã sát: nếu không, dayBlend tiệm cận dưới 1 và caustics/paper luôn thiếu ~4%
+    if (Math.abs(paperT - dayBlend) < 0.002) dayBlend = paperT;
     // Chữ: nền đã sáng thì đổi sang mực tối cho đủ tương phản. Chỉ đổi MỘT LẦN ở ngưỡng,
     // phần mượt do CSS transition (color .7s) lo — không nhảy màu đột ngột.
     const inkShould = dayBlend > 0.45;
