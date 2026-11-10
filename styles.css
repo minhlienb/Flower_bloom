@@ -117,26 +117,6 @@ html::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 46%,
 html::-webkit-scrollbar-thumb:active{background:color-mix(in srgb,var(--ink) 62%,transparent);background-clip:content-box}
 html::-webkit-scrollbar-corner{background:transparent}
 
-/* ---------- Hairline tiến trình ở mép phải ----------
-   CSS scroll-driven animation (Chrome 115+); chạy trên compositor nên không tốn main thread.
-   Trình duyệt không hỗ trợ scroll timeline -> ẩn hẳn. */
-.progress{display:none}
-@supports (animation-timeline: scroll()) {
-  .progress{display:block;position:fixed;top:0;right:0;width:1px;height:100%;z-index:6;pointer-events:none;
-    background:color-mix(in srgb,var(--ink) 80%,transparent);
-    transform-origin:top;transform:scaleY(0);
-    animation:progress-fill linear both;animation-timeline:scroll(root block)}
-  @keyframes progress-fill{from{transform:scaleY(0)}to{transform:scaleY(1)}}
-}
-
-/* Mobile / thiết bị cảm ứng: bỏ HẲN scrollbar tuỳ biến + hairline tiến trình.
-   Chrome Android dùng overlay scrollbar (chỉ hiện khi cuộn, không style được) nên đây là no-op
-   về hiển thị, nhưng tắt luôn cho chắc và để hairline không chiếm mép phải màn hình hẹp. */
-@media (pointer:coarse), (max-width:640px){
-  html{scrollbar-width:none}
-  html::-webkit-scrollbar{width:0;height:0;display:none}
-  .progress{display:none}
-}
 @media (max-width:640px){
   /* Mobile: chừa lề an toàn cho tai thỏ, bớt padding ngang để câu thơ không gãy vụn */
   .sec{min-height:100vh;min-height:100svh;
