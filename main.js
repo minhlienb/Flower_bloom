@@ -369,6 +369,15 @@ async function initScene(shaders) {
         'transition:opacity .5s ease,transform .5s cubic-bezier(.22,.9,.26,1)!important}';
     document.head.appendChild(st);
   }
+  // TEST branch: ?fx=nograin -> bỏ lớp grain phủ toàn màn; ?fx=off -> bỏ cả grain + vignette
+  const FX_MODE = new URLSearchParams(location.search).get('fx');
+  if (FX_MODE) {
+    const st = document.createElement('style');
+    st.textContent = FX_MODE === 'off'
+      ? '.grain,.vignette{display:none!important}'
+      : '.grain{display:none!important}';
+    document.head.appendChild(st);
+  }
   const keepBuffer = /[?&]preserve=1/.test(location.search);   // chỉ bật khi cần chụp canvas bằng toDataURL
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: keepBuffer });
   // mặc định tắt preserveDrawingBuffer để tránh copy backbuffer mỗi frame (tăng FPS);
