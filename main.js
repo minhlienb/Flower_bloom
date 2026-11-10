@@ -407,6 +407,9 @@ async function initScene(shaders) {
   const measureLayout = () => {
     scrollMax = Math.max(0, document.documentElement.scrollHeight - innerHeight);
     secBounds = secs.map((el) => [el.offsetTop, el.offsetTop + el.offsetHeight]);
+    // Thanh cuộn dựng tay: chiều cao thumb theo tỉ lệ khung nhìn / toàn trang (đơn vị svh)
+    const sh = document.documentElement.scrollHeight || 1;
+    document.documentElement.style.setProperty('--sbh', (100 * innerHeight / sh).toFixed(2) + 'svh');
   };
   const onScroll = () => {
     if (!pno) return;

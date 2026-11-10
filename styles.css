@@ -117,6 +117,19 @@ html::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 46%,
 html::-webkit-scrollbar-thumb:active{background:color-mix(in srgb,var(--ink) 62%,transparent);background-clip:content-box}
 html::-webkit-scrollbar-corner{background:transparent}
 
+/* ---------- Scrollbar dựng tay cho mobile ----------
+   Chrome Android / iOS dùng overlay scrollbar nên ::-webkit-scrollbar bị bỏ qua -> tự vẽ thumb.
+   Vị trí do CSS scroll-driven animation lo (0 JS/frame); JS chỉ đặt --sbh (tỉ lệ khung nhìn) khi resize. */
+.sbar{display:none}
+@supports (animation-timeline: scroll()) {
+  @media (pointer:coarse), (max-width:640px){
+    .sbar{display:block;position:fixed;top:0;right:2px;width:3px;height:100%;z-index:6;pointer-events:none}
+    .sbar i{position:absolute;left:0;width:100%;height:var(--sbh,16svh);border-radius:999px;
+      background:color-mix(in srgb,var(--ink) 34%,transparent);
+      animation:sbar-move linear both;animation-timeline:scroll(root block)}
+    @keyframes sbar-move{from{transform:translateY(0)}to{transform:translateY(calc(100svh - var(--sbh,16svh)))}}
+  }
+}
 @media (max-width:640px){
   /* Mobile: chừa lề an toàn cho tai thỏ, bớt padding ngang để câu thơ không gãy vụn */
   .sec{min-height:100vh;min-height:100svh;
