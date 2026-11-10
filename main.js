@@ -358,6 +358,17 @@ function trackPointer(bounds, signal) {
 
 // ---------- Main scene init ----------
 async function initScene(shaders) {
+  // TEST branch: ?text=lite  -> chữ vào bằng opacity+transform, bỏ filter:blur và will-change của từng ký tự
+  //              ?text=off   -> ẩn hẳn <main> (đo phần đóng góp của text)
+  const TEXT_MODE = new URLSearchParams(location.search).get('text');
+  if (TEXT_MODE) {
+    const st = document.createElement('style');
+    st.textContent = TEXT_MODE === 'off'
+      ? 'main{display:none!important}'
+      : '.sectitle .ch{filter:none!important;will-change:auto!important;' +
+        'transition:opacity .5s ease,transform .5s cubic-bezier(.22,.9,.26,1)!important}';
+    document.head.appendChild(st);
+  }
   const keepBuffer = /[?&]preserve=1/.test(location.search);   // chỉ bật khi cần chụp canvas bằng toDataURL
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: keepBuffer });
   // mặc định tắt preserveDrawingBuffer để tránh copy backbuffer mỗi frame (tăng FPS);
