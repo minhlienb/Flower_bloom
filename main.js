@@ -67,11 +67,22 @@ const PALETTES = {
   warm: { ramp: ['#f6aa0e', '#7c2262', '#a057a1', '#c694cb', '#f9dfe4'], deep: '#450724',
           glow: { halo: '#a057a1', mid: '#7c2262', core: '#f6aa0e', streak: '#fcd17b' }, bg: ['#150c11', '#251119'], ink: '#f2e7dc' },
 };
+// Bảng màu theo SECTION (6 section): 01–02 mực tím, 03 xanh #0051ff, 04 teal, 05 warm, 06 giấy sáng.
+// `tone` = lớp phủ nền (đổi sắc nền, KHÔNG đổi màu chữ); `paper` = độ lật nền sáng (0..1).
+const THEMES = [
+  { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
+  { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
+  { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#001a4d', toneA: 0.55, paper: 0 },
+  { ramp: ['#00544f', '#009e94', '#00c2a8', '#7fe6d6', '#d6fff7'], deep: '#012a33',
+    glow: { halo: '#005f66', mid: '#00b39a', core: '#7ff0dd', streak: '#c8fff4' },
+    tone: '#00231f', toneA: 0.6, paper: 0 },
+  { ...PALETTES.warm, tone: '#2a1206', toneA: 0.6, paper: 0 },
+  { ...PALETTES.warm, tone: '#f5f4f0', toneA: 0.0, paper: 1 },
+];
 // Ánh sáng có hướng: ảnh B sáng dần về phía trên-phải (~43° theo hồi quy độ sáng), tối dần về dưới-trái.
 const LIGHT = { angle: 43, tone: 0.25, hi: 0.18, alpha: 0.2 };  // góc (độ); độ ngả tông đậm; độ sáng thêm; chênh độ đậm nét
 const SPRING = { k: 6, c: 2.2 };  // lò xo hơi dưới tắt dần cho dòng cuộn: có chút quá đà rồi lắng lại
 const P_TWEEN = { k: 3.0, c: 1.7 };  // "cảm giác nặng" cho tween P0->P1: nổi chậm (ω≈1.7rad/s), hơi quá đà ~12% rồi lắng, ζ≈0.49
-const P_CSWEEP = { k: 3.6, c: 2.4 };  // lò xo nhẹ hơn cho lerp màu P1->P2 (ζ≈0.63): đổi muộn chút, hơi vượt rồi lắng — màu bản thân giá trị bị chặn [0,1]
 const P_SPIN = { rad: 2, lag: 2.0, axis: 'z' };  // P0->P1 xoay tổng ~2 rad trên mặt màn hình; lag hàm mũ KHÔNG quá đà: tiến rồi trôi dần như quán tính, không lùi lại
 
 // GLSL preprocessor directives (thay vì đặt trong shader file vì phụ thuộc vào constants JS)
@@ -386,6 +397,7 @@ async function initScene(shaders) {
   const pno = document.getElementById('pno');
   // #A chất thơ: tách tiêu đề theo ký tự + verse hiện khi section vào khung nhìn (IntersectionObserver, không pin)
   const secs = [...document.querySelectorAll('.sec')];
+  const SECN = Math.max(2, secs.length);   // số section -> nhịp màu và nhịp camera
   secs.forEach(el => {
     const t = el.querySelector('.sectitle');
     if (t) t.innerHTML = [...t.textContent].map((c, i) =>
@@ -398,7 +410,7 @@ async function initScene(shaders) {
   };
   const onScroll = () => {
     if (!pno) return;
-    const i = scrollMax > 0 ? Math.max(0, Math.min(4, Math.round(scrollY / scrollMax * 4))) : 0;  // 5 trang: 01–05
+    const i = scrollMax > 0 ? Math.max(0, Math.min(SECN - 1, Math.round(scrollY / scrollMax * (SECN - 1)))) : 0;
     pno.textContent = '0' + (i + 1);
   };
   addEventListener('scroll', onScroll, { passive: true });
@@ -458,13 +470,12 @@ async function initScene(shaders) {
   }));
   caustics.frustumCulled = false; caustics.renderOrder = -1;      // vẽ TRƯỚC hoa: gợn ở dưới cánh, cánh đè lên
   scene.add(camera); camera.add(caustics);                        // cần camera trong scene để child active
-  // Cặp màu gốc -> xanh #0051ff để lerp theo scroll (section 2 -> 3)
-  const pair = (from, to) => ({ a: new THREE.Color(from), b: new THREE.Color(to) });
-  const PAL_T = {
-    petals: PAL.ramp.map((h, i) => pair(h, P2_COL.ramp[i])),
-    deep: pair(PAL.deep, P2_COL.deep),
-    glow: ['halo', 'mid', 'core', 'streak'].map(k => pair(PAL.glow[k], P2_COL.glow[k])),
-  };
+  // Bảng màu 6 section parse sẵn sang THREE.Color (không cấp phát trong vòng lặp)
+  const TH = THEMES.map((t) => ({
+    ramp: t.ramp.map((h) => new THREE.Color(h)),
+    deep: new THREE.Color(t.deep),
+    glow: ['halo', 'mid', 'core', 'streak'].map((k) => new THREE.Color(t.glow[k])),
+  }));
   [[new THREE.Mesh(G.fill, mat(0.05)), 1], [new THREE.LineSegments(G.lines, mat(0.20)), 2], [new THREE.LineSegments(G.rim, mat(0.62)), 3]]
     .forEach(([o, ro]) => { o.frustumCulled = false; o.renderOrder = ro; group.add(o); });
   // BỤI NƯỚC XA — bề mặt WebGL độc lập (THREE.Points) nằm SAU hoa ở z âm: tầng depth thật duy nhất
@@ -666,11 +677,13 @@ async function initScene(shaders) {
   let scrollBlend = 1, scrollVel = 0;   // 0 = P0, 1 = P1. Load ra ở 1 -> lò xo tự hạ về P0 (đúng đường P1->P0)
   let tiltX = 0, tiltY = 0;             // base nghiêng (chuột + offset P0) — trước khi cộng spin
   let spinProg = 1;                     // tiến trình xoay riêng: lag mũ, không quá đà (quán tính không lùi)
-  let colorBlend = 0, colorVel = 0;     // lò xo cho lerp màu P1->P2: đổi chậm, chút quá đà rồi lắng
+  let themeCur = 0;                     // tiến trình màu theo section (0..SECN-1), trễ bằng lag mũ
   let skew = 0, lastY = scrollY, lastSkewT = '';  // A3: chữ nghiêng theo vận tốc cuộn, lắng mượt
   let vinKey = '';                      // .vin theo tâm section: đổi chỉ khi trạng thái đổi (không churn style)
-  let dayBlend = 0, dayOn = false;      // lật trắng sec4->sec5 (lag mũ, không quá đà); caustics = quad shader (cauU.uDay)
+  let dayBlend = 0, inkDark = false;    // độ lật nền sáng (lấy từ theme.paper), lag mũ; caustics = quad shader (cauU.uDay)
   const daylight = document.querySelector('.daylight');
+  const toneA = document.querySelector('.tone.a'), toneB = document.querySelector('.tone.b');
+  let toneIdx = -1, toneOA = -1, toneOB = -1;
   const clock = new THREE.Clock();
   // ---- Hạ cánh P(-1) -> P0: bắt đầu đúng lúc curtain mở ----
   // P(-1) ≡ P1, nên "intro" chỉ còn là: giữ nguyên trạng thái P1 tới lúc reveal, rồi thả lò xo
@@ -787,10 +800,42 @@ async function initScene(shaders) {
     const vc = scrollY + innerHeight * 0.5;
     const key = secs.map((el, i) => (secBounds[i] && secBounds[i][0] <= vc && vc < secBounds[i][1]) ? '1' : '0').join('');
     if (key !== vinKey) { vinKey = key; secs.forEach((el, i) => el.classList.toggle('vin', key.charAt(i) === '1')); }
-    // Section 4 -> section 5: nền lật trắng như giấy (f 0.75 -> 1 — ranh giới sec5 thu hẹp dần) — lag mũ k=2, không quá đà;
-    // caustics "lặn gợn" theo cùng độ trắng; qua mốc nội bộ 0.55 chữ lật sang mực tối giữ tương phản trên nền trắng
-    const dayT = smoothstep(0.75, 1, f);
-    dayBlend += (dayT - dayBlend) * (1 - Math.exp(-dt * 2));
+    // ---- MÀU THEO SECTION ----
+    // Tiến trình liên tục 0..SECN-1 (section 1 -> section cuối), trễ nhẹ bằng lag mũ để đổi màu êm.
+    // Mỗi section một bảng màu: cánh + glow + deep (shader) và sắc nền (tone). Chữ KHÔNG đổi màu.
+    const kT = begun ? Math.max(0, Math.min(SECN - 1, f * (SECN - 1))) : 0;
+    themeCur += (kT - themeCur) * (1 - Math.exp(-dt * 2.4));
+    if (Math.abs(kT - themeCur) < 0.001) themeCur = kT;
+    const thI = Math.min(SECN - 2, Math.max(0, Math.floor(themeCur)));
+    const thT = smoothstep(0, 1, Math.min(1, Math.max(0, themeCur - thI)));
+    const A = TH[thI], B = TH[thI + 1];
+    for (let ci = 0; ci < 5; ci++) U['uC' + ci].value.copy(A.ramp[ci]).lerp(B.ramp[ci], thT);
+    U.uDeep.value.copy(A.deep).lerp(B.deep, thT);
+    ['halo', 'mid', 'core', 'streak'].forEach((k, i) => {
+      glowU['u' + k[0].toUpperCase() + k.slice(1)].value.copy(A.glow[i]).lerp(B.glow[i], thT);
+    });
+    // Nền: 2 lớp tone cross-fade (chỉ ghi opacity -> compositor, không repaint); màu nền đổi 1 lần mỗi ranh giới
+    if (toneA && toneB) {
+      if (toneIdx !== thI) {
+        toneIdx = thI;
+        toneA.style.backgroundColor = THEMES[thI].tone;
+        toneB.style.backgroundColor = THEMES[thI + 1].tone;
+        toneOA = toneOB = -1;
+      }
+      const oa = THEMES[thI].toneA * (1 - thT), ob = THEMES[thI + 1].toneA * thT;
+      if (Math.abs(oa - toneOA) > 0.004) { toneOA = oa; toneA.style.opacity = oa.toFixed(3); }
+      if (Math.abs(ob - toneOB) > 0.004) { toneOB = ob; toneB.style.opacity = ob.toFixed(3); }
+    }
+    // Nền sáng (giấy) = theme.paper, giữ lag mũ như cũ cho caustics/dust
+    const paperT = THEMES[thI].paper + (THEMES[thI + 1].paper - THEMES[thI].paper) * thT;
+    dayBlend += (paperT - dayBlend) * (1 - Math.exp(-dt * 2));
+    // Chữ: nền đã sáng thì đổi sang mực tối cho đủ tương phản. Chỉ đổi MỘT LẦN ở ngưỡng,
+    // phần mượt do CSS transition (color .7s) lo — không nhảy màu đột ngột.
+    const inkShould = dayBlend > 0.45;
+    if (inkShould !== inkDark) {
+      inkDark = inkShould;
+      document.documentElement.style.setProperty('--ink', inkDark ? '#14151f' : PAL.ink);
+    }
     // Chỉ chạm style của .daylight khi thực sự cần: lúc dayBlend=0 thì display:none -> bớt 1 layer composite mỗi frame.
     if (daylight && (dayBlend > 0.001 || daylight.style.display !== 'none')) {
       const on = dayBlend > 0.001;
@@ -807,32 +852,14 @@ async function initScene(shaders) {
     iDustU.uT.value = iDustT;
     iDustU.uOpacity.value = IDUST.opacity * (1 - smoothstep(0.86, 1, iDustT));
     iDust.visible = begun && iDustT < 0.999;
-    const day = dayBlend > 0.55;
-    if (day !== dayOn) {
-      dayOn = day;
-      document.documentElement.classList.toggle('day', day);
-      document.documentElement.style.setProperty('--ink', day ? '#14151f' : PAL.ink);
-    }
     // Chưa mở rèm thì đích = 1 (giữ nguyên P1) -> load ra đúng trạng thái P1, sau reveal lò xo mới hạ về P0.
-    const sTarget = begun ? smoothstep(0, 1 / 4, f) : 1;   // 0 = P0, 1 = P1 (hết section 2 = f 1/4 — layout 5 section)
+    const sTarget = begun ? smoothstep(0, 1 / (SECN - 1), f) : 1;   // 0 = P0, 1 = P1 (hết section 2)
     scrollVel += (P_TWEEN.k * (sTarget - scrollBlend) - P_TWEEN.c * scrollVel) * dt;
     scrollBlend += scrollVel * dt;
     // lắng hẳn khi gần đích để không nhún nhảy vô hạn quanh 0/1
     if (Math.abs(sTarget - scrollBlend) < 0.0008 && Math.abs(scrollVel) < 0.002) { scrollBlend = sTarget; scrollVel = 0; }
     if (begun && !arrived && sTarget === 0 && scrollBlend === 0 && scrollVel === 0) { arrived = true; arrRec = false; }  // hạ cánh xong: ngừng đo
     const s = 1 - scrollBlend;
-    // Màu: section 2->3 (f: 1/3 -> 1/2) lerp toàn bộ bảng màu shader về #0051ff.
-    // g chạy qua lò xo P_CSWEEP: đổi muộn một nhịp, hơi vượt rồi lắng — cảm giác "chìm đậm" nặng khi hai đầu khôi phục
-    const gTarget = smoothstep(1 / 4, 1 / 2, f);   // section 2->3 (f 0.25->0.5 — layout 5 section): lerp màu về #0051ff
-    colorVel += (P_CSWEEP.k * (gTarget - colorBlend) - P_CSWEEP.c * colorVel) * dt;
-    colorBlend += colorVel * dt;
-    if (Math.abs(gTarget - colorBlend) < 0.0008 && Math.abs(colorVel) < 0.002) { colorBlend = gTarget; colorVel = 0; }
-    const g = Math.max(0, Math.min(1, colorBlend));
-    if (g > 0) {
-      PAL_T.petals.forEach((p, i) => U['uC' + i].value.copy(p.a).lerp(p.b, g));
-      U.uDeep.value.copy(PAL_T.deep.a).lerp(PAL_T.deep.b, g);
-      ['halo', 'mid', 'core', 'streak'].forEach((k, i) => glowU['u' + k[0].toUpperCase() + k.slice(1)].value.copy(PAL_T.glow[i].a).lerp(PAL_T.glow[i].b, g));
-    }
     // P0 responsive: màn hẹp zoom ra theo bề ngang hoa (dùng chung cho cả hạ cánh lẫn camera)
     p0kCur = Math.max(1, (FRAME.flowerW / FRAME.p0Fill)
       / (2 * Math.tan(THREE.MathUtils.degToRad(P0.cam.fov / 2)) * camera.aspect) / FRAME.p0Dist);
@@ -887,7 +914,7 @@ async function initScene(shaders) {
     ndcBounds,
     // Debug (giữ lại): frame time + vị trí element + trạng thái hạ cánh/scroll
     stats,
-    getState: () => ({ s: +scrollBlend.toFixed(3), g: +colorBlend.toFixed(3), cam: camera.position.toArray().map(v => +v.toFixed(1)), fov: camera.fov, rot: [group.rotation.x, group.rotation.y, group.rotation.z].map(v => +v.toFixed(3)), spin: +spinProg.toFixed(3), open: +U.uOpen.value.toFixed(3), begun, arrived }) };
+    getState: () => ({ s: +scrollBlend.toFixed(3), theme: +themeCur.toFixed(2), cam: camera.position.toArray().map(v => +v.toFixed(1)), fov: camera.fov, rot: [group.rotation.x, group.rotation.y, group.rotation.z].map(v => +v.toFixed(3)), spin: +spinProg.toFixed(3), open: +U.uOpen.value.toFixed(3), begun, arrived }) };
   return { ready, begin, measure: measureLayout };
 }
 
