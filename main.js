@@ -72,11 +72,17 @@ const PALETTES = {
 const THEMES = [
   { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
   { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
-  { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#001a4d', toneA: 0.55, paper: 0 },
-  { ramp: ['#00544f', '#009e94', '#00c2a8', '#7fe6d6', '#d6fff7'], deep: '#012a33',
-    glow: { halo: '#005f66', mid: '#00b39a', core: '#7ff0dd', streak: '#c8fff4' },
-    tone: '#00231f', toneA: 0.6, paper: 0 },
-  { ...PALETTES.warm, tone: '#2a1206', toneA: 0.6, paper: 0 },
+  // --- Bảng màu material (ảnh tham chiếu: FOREST MOSS · SAGE MOSS · SOFT BONE · WARM TAUPE · WALNUT BARK · CHARCOAL STONE) ---
+  // Dùng cho section 03–05; section 01–02 (intro) và 06 (giấy) giữ bảng màu gốc.
+  { ramp: ['#8E9A5E', '#7A8552', '#A3AD76', '#CBD0A8', '#EEE7DE'], deep: '#2A2E1B',   // FOREST / SAGE MOSS
+    glow: { halo: '#4A5232', mid: '#7A8552', core: '#EEE7DE', streak: '#F6F2E9' },
+    tone: '#33402A', toneA: 0.72, paper: 0 },
+  { ramp: ['#A3AD76', '#B7BE8E', '#C9CFA6', '#DEDCCB', '#EEE7DE'], deep: '#4A4F35',   // SAGE MOSS / SOFT BONE
+    glow: { halo: '#6B7248', mid: '#A3AD76', core: '#EEE7DE', streak: '#F7F4EC' },
+    tone: '#43423E', toneA: 0.65, paper: 0 },                                          // nền CHARCOAL STONE
+  { ramp: ['#684C36', '#8A6B52', '#BAA99A', '#D6CBC1', '#EEE7DE'], deep: '#3A2B20',   // WALNUT BARK / WARM TAUPE
+    glow: { halo: '#5A4130', mid: '#8A6B52', core: '#D6CBC1', streak: '#EEE7DE' },
+    tone: '#4A3424', toneA: 0.70, paper: 0 },
   { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#f5f4f0', toneA: 0.0, paper: 1 },  // giấy: hoa vẫn xanh như ảnh tham chiếu
 ];
 // Ánh sáng có hướng: ảnh B sáng dần về phía trên-phải (~43° theo hồi quy độ sáng), tối dần về dưới-trái.

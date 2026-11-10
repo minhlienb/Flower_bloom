@@ -1,0 +1,11 @@
+# Không deploy phần dev / file tạm lên Vercel — chỉ giữ site tĩnh ở thư mục gốc.
+# (gitignore-style: chú thích phải nằm trên dòng riêng, không viết sau pattern)
+debug/
+Screenshot*.png
+flower_three_underwater.html
+BUG-GUESSing-Dianose.txt
+.git/
+.vercelignore
+
+# Ghi chú dev + TODO — bỏ dòng dưới nếu muốn Readme public trên domain
+Readme.md

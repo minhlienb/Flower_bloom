@@ -1,4 +1,8 @@
-:root{ --ink:#eae5f3; --hair:rgba(234,229,243,.16); }
+:root{ --ink:#eae5f3; --hair:rgba(234,229,243,.16);
+  /* Font hệ thống đã tuyển cho loader: cold cache vẫn ra serif cổ điển thay vì Times mặc định.
+     Iowan (macOS) · Palatino Linotype (Windows) · Palatino/P052 (Linux) · Georgia (fallback rộng) */
+  --sys-serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Baskerville,'Hoefler Text',Georgia,'Times New Roman',serif;
+  --sys-sans:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; }
 *{box-sizing:border-box}
 html,body{margin:0;background:#0d0d15}
 html{scrollbar-gutter:stable;-webkit-text-size-adjust:100%;text-size-adjust:100%}   /* giữ chỗ scrollbar từ đầu: reveal không reflow toàn trang (nguồn stutter trên màn 2x) */
@@ -14,9 +18,9 @@ html.is-loading{overflow:hidden}   /* chỉ khoá cuộn, không đổi scrollHe
 .loader-inner{display:grid;justify-items:center;gap:16px;padding:24px;text-align:center;
   transition:opacity .4s ease,transform .7s cubic-bezier(.76,0,.24,1)}
 .loader.is-done .loader-inner{opacity:0;transform:translateY(-18px)}
-.loader-mark{margin:0;font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:300;
+.loader-mark{margin:0;font-family:'Cormorant Garamond',var(--sys-serif);font-style:italic;font-weight:400;
   font-size:clamp(72px,12vw,168px);line-height:.9;letter-spacing:-.025em;color:var(--ink)}
-.loader-sub{margin:-2px 0 0;font:300 10px/1 Inter,system-ui,sans-serif;letter-spacing:.42em;
+.loader-sub{margin:-2px 0 0;font:300 10px/1 Inter,var(--sys-sans);letter-spacing:.42em;
   text-transform:lowercase;color:color-mix(in srgb,var(--ink) 46%,transparent)}
 .loader-bar{position:relative;width:min(220px,44vw);height:1px;margin-top:10px;
   background:rgba(234,229,243,.16);overflow:hidden}
@@ -24,11 +28,11 @@ html.is-loading{overflow:hidden}   /* chỉ khoá cuộn, không đổi scrollHe
   background:var(--ink);will-change:transform}
 .loader-meta{display:flex;align-items:baseline;gap:16px;width:min(320px,62vw);
   color:color-mix(in srgb,var(--ink) 46%,transparent)}
-.loader-pct{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:300;
+.loader-pct{font-family:'Cormorant Garamond',var(--sys-serif);font-style:italic;font-weight:400;
   font-size:clamp(28px,3.2vw,44px);line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums;
   color:var(--ink)}
 .loader-sym{font-style:normal;font-size:.62em;margin-left:.06em;letter-spacing:.02em;opacity:.8}
-.loader-no{margin-left:auto;font:300 9px/1 Inter,system-ui,sans-serif;letter-spacing:.3em;text-transform:uppercase}
+.loader-no{margin-left:auto;font:300 9px/1 Inter,var(--sys-sans);letter-spacing:.3em;text-transform:uppercase}
 canvas{position:fixed;inset:0;display:block;z-index:1;opacity:1;transition:opacity .5s ease}   /* canvas TRÊN .daylight — nền trắng ở dưới, hoa không bị che */
 /* Sections: cuộn bình thường (không pin) — canvas fixed phía sau, chữ trôi qua */
 /* Đổi màu chữ khi nền lật sáng: transition để không nhảy màu đột ngột (JS chỉ set --ink một lần) */
@@ -123,6 +127,10 @@ html::-webkit-scrollbar-corner{background:transparent}
 .sbar{display:none}
 @supports (animation-timeline: scroll()) {
   @media (pointer:coarse), (max-width:640px){
+    /* Tắt scrollbar NATIVE ở đúng nơi vẽ thanh tay — trước đây vẽ thêm .sbar mà vẫn để native
+       -> trên cửa sổ hẹp (pointer:fine) thấy 2 thanh chồng nhau (scrollbar artifact). */
+    html{scrollbar-width:none}
+    html::-webkit-scrollbar{width:0;height:0;display:none}
     .sbar{display:block;position:fixed;top:0;right:2px;width:3px;height:100%;z-index:6;pointer-events:none}
     .sbar i{position:absolute;left:0;width:100%;height:var(--sbh,16svh);border-radius:999px;
       background:color-mix(in srgb,var(--ink) 34%,transparent);

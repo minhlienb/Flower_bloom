@@ -107,6 +107,34 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
   từ nụ), **click** = play/pause, **`R`** = chạy lại từ đầu; API: `flower.play() / .pause() / .toggle() / .replay()`,
   `flower.playing`; `getState()` có thêm khoá `playing`.
 
+## Deploy (Vercel Hobby)
+
+Site tĩnh, **không build step**. Cấu hình đã khoá trong `vercel.json`:
+
+| Khoá | Giá trị | Vì sao |
+|---|---|---|
+| `framework` / `buildCommand` | `null` | không có bundler, deploy nguyên thư mục |
+| `outputDirectory` | `.` | phục vụ từ gốc repo |
+| `cleanUrls` | `true` | `/index.html` → `/` |
+| header `shaders.glsl` | `text/plain`, `max-age=0` | file được `fetch()` và sửa thường xuyên |
+| header `lib/`, `font/` | `immutable`, 1 năm | vendor + subset font, đổi tên khi cập nhật |
+| header chung | `nosniff`, `Referrer-Policy` | chặn MIME-sniff |
+
+`.vercelignore` bỏ `debug/`, `Screenshot*.png`, bản HTML legacy, file ghi chú và `Readme.md` (bỏ dòng cuối nếu muốn Readme public) ⇒ payload deploy **23 file / 1.25 MB**
+(đo thực tế: 13 request, 1024 KB chưa nén, riêng `three.min.js` 589 KB; Vercel brotli còn **~0.5 MB**).
+
+```bash
+npx vercel            # link project lần đầu + preview
+npx vercel --prod     # production
+```
+
+Hoặc import repo trên dashboard: **Framework = Other**, Build Command = *(trống)*, Output Directory = `.`.
+Gói **Hobby chỉ dùng phi thương mại** — khớp license PolyForm Noncommercial 1.0.0 của repo;
+`LICENSE` và `THIRD-PARTY-NOTICES.md` được deploy kèm (`index.html` có `<link rel="license" href="LICENSE">`).
+
+Sau khi deploy kiểm: `/` render hoa, Network không có 404, console chỉ có 3 dòng signature,
+`?stats=1` bật HUD, `?palette=warm` đổi bảng màu.
+
 ## License
 
 The source code written by the author (HTML/CSS/JS/GLSL) is licensed under
@@ -190,6 +218,9 @@ Hình 2
 chọn font sao cho đừng nhìn như AI
 
 chạy được resolution > 2K
+  → đã làm: `dprCap` giữ canvas ≤ 5.8 Mpx ở màn thường; **> 1200p** (1440p/4K/ultrawide) hạ ngân sách còn
+  `PR_BUDGET_BIG = 3.2 Mpx` và cho phép render **dưới 1×** (canvas 0.62–1.5× rồi upscale).
+  Đo tại chỗ: 3840×2160 từ 8.29 Mpx (1×) → 3.20 Mpx, 115.5 → **120 fps**; 2560×1440 từ 3.69 → 3.20 Mpx (−13%).
 
 tách logic từ main.js để mỗi file làm một việc
 
