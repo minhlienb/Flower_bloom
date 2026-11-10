@@ -16,7 +16,7 @@ attribute float iOpen;     // độ mở RIÊNG của cánh: 0 = nụ, 1 = nở 
 attribute vec2 aPetal;     // u, u^1.25
 attribute vec3 aBake;      // rho, rho^1.6, rho^1.4
 
-uniform float uAmp, uEnergy, uPhase, uDrift, uTime, uWind, uLmax, uCurl, uWrap, uTilt, uBase;
+uniform float uAmp, uEnergy, uPhase, uDrift, uTime, uWind, uLmax, uCurl, uWrap, uTilt, uBase, uOver, uLag;
 uniform vec2 uGdir, uAxis, uLight;
 uniform vec3 uC0, uC1, uC2, uC3, uC4, uDeep, uLightK;
 
@@ -45,6 +45,15 @@ void main() {
   // o được phép VƯỢT 1.0: cánh bung quá rồi nảy lại (ngoại suy có kiểm soát).
   float o = clamp(iOpen, 0.0, 1.25);
   float oc = clamp(iOpen, 0.0, 1.0);          // bản clamp cho alpha (không cho trong suốt âm)
+  // CUỘN VẢI: độ mở chạy như một mép vải từ GỐC cánh ra ĐẦU cánh (position.z = t dọc cánh).
+  // uLag càng lớn, đầu cánh càng mở muộn so với gốc.
+  float oV = clamp(o * (1.0 + uLag) - position.z * uLag, 0.0, 1.25);
+  float ocV = clamp(oc * (1.0 + uLag) - position.z * uLag, 0.0, 1.0);
+  // Nở theo 3 NHỊP LỆCH nhau (tự nhiên hơn: cả cánh cùng một hệ số trông như cơ cấu):
+  // đáy cánh bật ra trước -> mép cánh nhả ra -> cuối cùng mới duỗi hết độ cong.
+  float oTilt = smoothstep(0.00, 0.55, oV);
+  float oWrap = smoothstep(0.08, 0.85, oV);
+  float oCurl = smoothstep(0.28, 1.00, oV);
   float sc = iData.y;
   float c = iRot.x, s = iRot.y;
   vec2 q = vec2(p.x * iData.z, p.y);
@@ -60,19 +69,21 @@ void main() {
   // --- cuộn: cung tròn bảo toàn độ dài; tổng góc cuốn tại đầu cánh = curl ---
   float len = max(sc * uLmax, 1.0);            // cánh mọc từ TÂM (gốc lưới = 0,0), không phải từ Q0
   float arc = max(along, 0.0);
-  float curl = mix(uCurl * iData2.x, -0.12, o);          // nở: đầu cánh hơi bật ngược
+  float curl = mix(uCurl * iData2.x, -0.12, oCurl);       // nở: đầu cánh hơi bật ngược
   float kk = curl / len;
   float A = abs(kk) > 1e-4 ? sin(kk * arc) / kk : arc;
   float Z = abs(kk) > 1e-4 ? (1.0 - cos(kk * arc)) / kk : 0.0;
-  float bw = across * mix(uWrap * iData2.y, 1.0, o);
+  float bw = across * mix(uWrap * iData2.y, 1.0, oWrap);
 
   // --- dựng cánh quanh trục TIẾP TUYẾN (vuông góc chiều dài): nụ thành khối đứng ---
-  float ta = uTilt * iData2.z * (1.0 - o);
+  float ta = uTilt * iData2.z * (1.0 - oTilt);
   float ct = cos(ta), st = sin(ta);
   float a2 = A * ct - Z * st;            // thành phần dọc bị dựng vào z
   float bz = A * st + Z * ct;
-  float baseR = uBase * sc * (1.0 - o);  // đế: cánh mọc trên vành khi còn nụ; nở ra thì khép về tâm (không để lỗ giữa hoa)
+  float baseR = uBase * sc * (1.0 - oTilt);  // đế: khép về tâm cùng nhịp với đáy cánh
   vec3 pos = vec3(dir * (baseR + a2) + perp * bw, bz);
+  // bung quá (o > 1): cả cánh phình ra khỏi tư thế nghỉ — thấy rõ cú vượt rồi trả về
+  pos *= 1.0 + uOver * max(o - 1.0, 0.0);
 
   // --- dòng nước + drift (giữ nguyên) ---
   float vLight = dot(r / R0, uLight);
@@ -91,7 +102,7 @@ void main() {
   col = mix(col, uDeep, uLightK.x * max(-vLight, 0.0));
   col = mix(col, vec3(1.0), uLightK.y * max(vLight, 0.0));
   col = mix(col, vec3(1.0), 0.25 * max(vCrest, 0.0));
-  float a = mix(0.3, 1.0, smoothstep(0.0, 0.3, vG)) * mix(0.75, 1.0, oc) *
+  float a = mix(0.3, 1.0, smoothstep(0.0, 0.3, vG)) * mix(0.75, 1.0, ocV) *
             (1.0 + 0.4 * uEnergy) * (1.0 - uLightK.z * vLight);
   vCol = vec4(col, a);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos.xy + off.xy, pos.z + off.z + d * 0.8 * sc, 1.0);

@@ -65,6 +65,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   <p class="sub">Đúng setup xuất từ <b>petal_bud</b>: Q · <code>w0=0</code> · N/M · curl/wrap/tilt/base · τ/ζ/stagger.
     Motion được <b>mô phỏng trước</b> ở 240 Hz rồi scrub — kết quả không phụ thuộc frame rate.</p>
 
+  <p class="sub" id="fileState" style="margin:-4px 0 10px">params.json: đang kiểm tra…</p>
   <div class="grp"><h2>Hướng chạy</h2><div id="dir" class="tabs"></div></div>
   <div class="grp"><h2>Motion</h2><div id="motion"></div></div>
   <div class="grp"><h2>Hình nụ</h2><div id="shape"></div></div>
@@ -86,8 +87,15 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
     </select>
     <span style="color:var(--dim);font-size:10px;margin-left:6px">cánh</span>
     <select id="selpetal" style="min-width:150px;background:#12121c;color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:400 11px ui-monospace,Menlo,monospace"></select>
+    <button id="edit" title="sửa curve bằng keyframe">✎ sửa</button>
+    <button id="kfsin" title="preset hình sin: dao động tắt dần quanh 1">∿ sin</button>
+    <button id="kfdel" title="bỏ keyframe, quay về lò xo">−kf</button>
+    <button id="kfapp" title="áp curve này cho cả lớp">→lớp</button>
+    <button id="kfall" title="áp curve này cho 18 cánh">→all</button>
+    <button id="save" title="xuất thông số ra params.json (cùng thư mục)">⬇ params.json</button>
     <span class="sp"></span>
-    <span style="color:var(--dim);font-size:10px">kéo để scrub · dblclick khung 3D để reset view</span>
+    <span id="flash" style="color:#7be3a0;font-size:10px"></span>
+    <span style="color:var(--dim);font-size:10px">kéo: scrub · ✎: click thêm điểm, kéo điểm để sửa, chuột phải xoá</span>
   </div>
   <canvas id="dockcv"></canvas>
 </div>
@@ -100,7 +108,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   // ============================================================
   // Setup — chép nguyên từ panel "Xuất ra main.js" của debug/petal_bud
   // ============================================================
-  const AXIS_ANG = 1.0033;                                   // 57.48°
+  let AXIS_ANG = 1.0033;                                     // 57.48° (JSON có thể ghi đè)
   const Q = [[40, 370], [160, 510], [310, 270], [470, 430]];
   const W = { w0: 0, w1: 63, w2: 49, t1: 0.30, t2: 0.72 };   // st = n*s*0 · c1 = .3A + n*s*63 · c2 = .72A + n*s*49
   const RES = { N: 120, M: 28 };
@@ -214,6 +222,23 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   // ---------- mô phỏng trước 18 lò xo (ζ<1) ở 240 Hz ----------
   const LEN = Math.round(DUR * RATE);
   let curves = [], stats = [], allSettled = 0;
+  // đo 2 cực trị + thời điểm lắng từ chính mảng mẫu (dùng cho cả lò xo và curve tự vẽ)
+  function measure(arr, from, to, i0) {
+    const up = to > from;
+    let iP = i0, iR = -1;
+    for (let i = i0; i < arr.length; i++) if (up ? arr[i] > arr[iP] : arr[i] < arr[iP]) iP = i;
+    for (let i = iP + 1; i < arr.length; i++) if (iR < 0 || (up ? arr[i] < arr[iR] : arr[i] > arr[iR])) iR = i;
+    let iS = arr.length - 1;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (Math.abs(arr[i] - to) > 3e-3) { iS = Math.min(arr.length - 1, i + 1); break; }
+    }
+    return {
+      peak: arr[iP], tPeak: iP / RATE,
+      rebound: iR < 0 ? to : arr[iR], tRebound: iR < 0 ? DUR : iR / RATE,
+      settle: iS / RATE,
+    };
+  }
+
   function simulate(from, to) {
     const dt = 1 / RATE;
     curves = []; stats = []; allSettled = 0;
@@ -231,19 +256,98 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
         }
         arr[i] = x;
       }
-      // hai cực trị: (1) vượt quá đích, (2) cú nảy ngược lại sau đó
-      const up = to > from;
-      let iP = -1, iR = -1;
-      for (let i = i0; i < LEN; i++) if (iP < 0 || (up ? arr[i] > arr[iP] : arr[i] < arr[iP])) iP = i;
-      for (let i = iP + 1; i < LEN; i++) if (iR < 0 || (up ? arr[i] < arr[iR] : arr[i] > arr[iR])) iR = i;
       curves.push(arr);
-      stats.push({
-        peak: arr[iP], tPeak: iP / RATE,
-        rebound: iR < 0 ? to : arr[iR], tRebound: iR < 0 ? DUR : iR / RATE,
-        settle: settle === null ? DUR : settle,
-      });
-      allSettled = Math.max(allSettled, stats[stats.length - 1].settle);
+      stats.push(measure(arr, from, to, i0));
     }
+    applyKfs();
+  }
+
+  // ============================================================
+  // Sửa curve tay: keyframe per-cánh, nội suy Hermite (Catmull-Rom).
+  // Cánh có keyframe KHÔNG dùng lò xo nữa; bỏ keyframe là về lò xo.
+  // ============================================================
+  const kfs = new Map();
+  const kfOf = (k) => kfs.get(k);
+
+  // Hermite MONOTONE (Fritsch–Carlson): đi qua đúng từng keyframe, không tự nảy thêm giữa 2 điểm —
+  // nên "quán tính" trong hình chỉ đến từ curve, và mock_p-1 phát lại y hệt những gì thấy ở đây.
+  function slopes(pts) {
+    const n = pts.length, m = new Array(n);
+    if (n < 2) return m.fill(0);
+    const d = [];
+    for (let i = 0; i < n - 1; i++) d[i] = (pts[i + 1][1] - pts[i][1]) / Math.max(1e-6, pts[i + 1][0] - pts[i][0]);
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) m[i] = 0;
+      else {
+        const avg = (d[i - 1] + d[i]) / 2, lim = 3 * Math.min(Math.abs(d[i - 1]), Math.abs(d[i]));
+        m[i] = Math.sign(avg) * Math.min(Math.abs(avg), lim);
+      }
+    }
+    return m;
+  }
+  function hermite(pts, t) {
+    const n = pts.length;
+    if (n < 2 || t <= pts[0][0]) return n ? pts[0][1] : 0;
+    if (t >= pts[n - 1][0]) return pts[n - 1][1];
+    let i = 0;
+    while (i < n - 2 && t > pts[i + 1][0]) i++;
+    const p0 = pts[i], p1 = pts[i + 1];
+    const seg = Math.max(1e-4, p1[0] - p0[0]);
+    const u = (t - p0[0]) / seg, u2 = u * u, u3 = u2 * u;
+    const m = pts._m || (pts._m = slopes(pts));
+    const m0 = m[i] * seg, m1 = m[i + 1] * seg;
+    return (2 * u3 - 3 * u2 + 1) * p0[1] + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1[1] + (u3 - u2) * m1;
+  }
+
+  function applyKfs() {
+    for (const [k, pts] of kfs) {
+      if (!pts.length || !curves[k]) continue;
+      const arr = curves[k];
+      for (let i = 0; i < LEN; i++) arr[i] = hermite(pts, i / RATE);
+      const from = ui.dir === 1 ? 0 : 1, to = ui.dir === 1 ? 1 : 0;
+      stats[k] = measure(arr, from, to, Math.min(LEN - 1, Math.ceil(insts[k].tStart * RATE)));
+    }
+    allSettled = stats.reduce((m, s) => Math.max(m, s ? s.settle : 0), 0);
+  }
+
+  // seed keyframe từ curve lò xo hiện tại: 0 · đỉnh · nảy · lắng · hết
+  function ensureKf(k) {
+    if (kfs.has(k)) return kfs.get(k);
+    const arr = curves[k], st = stats[k], to = ui.dir === 1 ? 1 : 0;
+    const ts = [0, DUR, st.tPeak, st.tRebound, st.settle];
+    for (let t = 0.5; t < DUR; t += 0.5) ts.push(t);            // mẫu nền 0.5 s: tách keyframe gần như không đổi hình
+    ts.sort((a, b) => a - b);
+    const uniq = ts.filter((t, i, a) => i === 0 || t - a[i - 1] > 0.03).map((t) => Math.min(DUR, Math.max(0, t)));
+    const pts = uniq.map((t) => [t, arr[Math.min(LEN - 1, Math.round(t * RATE))]]);
+    if (Math.abs(pts[pts.length - 1][1] - to) > 1e-4) pts.push([DUR, to]);
+    kfs.set(k, pts);
+    return pts;
+  }
+  // ---------- preset hình sin ----------
+  // v(t) = 1 − e^(−damp·t) · cos(2π t / period): bắt đầu đúng 0, vượt 1 ở nửa chu kỳ đầu,
+  // rồi dao động tắt dần quanh P0 (1.000). Dùng làm "quán tính" có hình sin thay vì lò xo.
+  const SINE = { period: 1.2, damp: 2.6, step: 0.15 };
+  function sinePreset(k = ui.sel) {
+    const v = (t) => 1 - Math.exp(-SINE.damp * t) * Math.cos((2 * Math.PI * t) / SINE.period);
+    const ts = [];
+    for (let t = 0; t <= DUR + 1e-6; t += SINE.step) ts.push(t);           // mẫu đều
+    for (let n = 1; n * SINE.period * 0.5 <= DUR; n++) ts.push((n * SINE.period) / 2);   // đúng các đỉnh/đáy
+    ts.push(DUR);
+    const uniq = ts.map((t) => Math.min(DUR, Math.max(0, t))).sort((a, b) => a - b)
+      .filter((t, i, a) => i === 0 || t - a[i - 1] > 0.02);
+    const pts = uniq.map((t) => [+t.toFixed(3), +v(t).toFixed(4)]);
+    pts[0][1] = 0; pts[pts.length - 1][1] = 1;                              // neo hai đầu: nụ -> P0
+    kfs.set(k, pts);
+    applyKfs(); invalidateStatic(); setTime(ui.time); updateStats();
+    return pts;
+  }
+  function dropKf(k) { kfs.delete(k); simulate(ui.dir === 1 ? 0 : 1, ui.dir === 1 ? 1 : 0); }
+  function copyKf(from, targets) {
+    const src = kfs.get(from);
+    if (!src) return;
+    targets.forEach((k) => kfs.set(k, src.map((p) => [p[0], p[1]])));
+    applyKfs(); invalidateStatic(); setTime(ui.time); updateStats();
   }
   const openAt = (k, t) => curves[k][Math.min(LEN - 1, Math.round(Math.max(0, Math.min(DUR, t)) * RATE))];
 
@@ -273,6 +377,8 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
       uTime: { value: 0 }, uWind: { value: 0.35 }, uLmax: { value: built.lmax },
       uAxis: { value: new THREE.Vector2(built.ax[0], built.ax[1]) },
       uCurl: { value: HUE.curl }, uWrap: { value: HUE.wrap }, uTilt: { value: HUE.tilt }, uBase: { value: HUE.base },
+    uOver: { value: 0.9 },
+    uLag: { value: 0.45 },
       uGdir: { value: new THREE.Vector2(320, 410).normalize() },
       uLight: { value: new THREE.Vector2(Math.cos(lightA), Math.sin(lightA)) },
       uLightK: { value: new THREE.Vector3(0.25, 0.18, 0.2) },
@@ -368,6 +474,22 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   }
   const resetView = () => { view.target.set(0, 0, 90); view.radius = 1150; view.theta = 1.05; view.phi = 1.12; };
 
+  // dựng lại lưới cánh (Q / AXIS_ANG / N / M đổi) — thay attribute rồi dispose để three cấp lại buffer
+  function rebuildGeom() {
+    Object.assign(built, buildPetal());
+    if (!renderer) return;
+    const keys = ['fill', 'lines', 'rim'], order = ['fillIdx', 'lineIdx', 'rimIdx'];
+    group.children.forEach((o, i) => {
+      const g = o.geometry;
+      g.setAttribute('position', new THREE.BufferAttribute(built.pos, 3));
+      g.setAttribute('aPetal', new THREE.BufferAttribute(built.aPetal, 2));
+      g.setAttribute('aBake', new THREE.BufferAttribute(built.aBake, 3));
+      g.setIndex(built[order[keys.indexOf(keys[i])]]);
+      g.dispose();
+    });
+    if (U) { U.uLmax.value = built.lmax; U.uAxis.value.set(built.ax[0], built.ax[1]); }
+  }
+
   const resizeGL = () => {
     if (!renderer) return;
     const host = $('view'), w = host.clientWidth, h = host.clientHeight;
@@ -378,7 +500,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   };
 
   // ---------- transport ----------
-  const ui = { tab: 'tl', play: false, loop: true, speed: 1, time: 0, dir: 1, sel: 0 };
+  const ui = { tab: 'tl', play: false, loop: true, speed: 1, time: 0, dir: 1, sel: 0, edit: false };
   let statsAt = -1;
   function setTime(t) {
     ui.time = Math.max(0, Math.min(DUR, t));
@@ -399,18 +521,22 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
     invalidateStatic();
     setTime(ui.time);
   }
+  // bake lại iRot/iData (+ iData2) trên GPU sau khi đổi s/lớp hay nạp JSON
+  function syncInstAttrs() {
+    if (!renderer) return;
+    group.children.forEach((o) => {
+      const a = o.geometry.attributes;
+      insts.forEach((p, k) => {
+        a.iRot.array.set([Math.cos(p.rot), Math.sin(p.rot), Math.pow(p.s, 1.6), Math.pow(p.s, 1.4)], k * 4);
+        a.iData.array[k * 4 + 1] = p.s;
+        a.iData2.array[k * 3] = p.curlK; a.iData2.array[k * 3 + 1] = p.wrapK; a.iData2.array[k * 3 + 2] = p.tiltK;
+      });
+      a.iRot.needsUpdate = true; a.iData.needsUpdate = true; a.iData2.needsUpdate = true;
+    });
+  }
   function rescaleLayers() {
     buildInsts();
-    if (renderer) {
-      group.children.forEach((o) => {
-        const a = o.geometry.attributes;
-        insts.forEach((p, k) => {
-          a.iRot.array.set([Math.cos(p.rot), Math.sin(p.rot), Math.pow(p.s, 1.6), Math.pow(p.s, 1.4)], k * 4);
-          a.iData.array[k * 4 + 1] = p.s;
-        });
-        a.iRot.needsUpdate = true; a.iData.needsUpdate = true;
-      });
-    }
+    syncInstAttrs();
     simulate(ui.dir === 1 ? 0 : 1, ui.dir === 1 ? 1 : 0);
     invalidateStatic();
     setTime(ui.time);
@@ -467,6 +593,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
       ['open', num(openAt(k, ui.time), 3)],
       ['vượt đích', num(st.peak, 3) + ' @ ' + num(st.tPeak, 2) + 's'],
       ['nảy lại', num(st.rebound, 3) + ' @ ' + num(st.tRebound, 2) + 's'],
+      ['curve', kfs.has(k) ? 'keyframe ×' + kfs.get(k).length : 'lò xo (τ/ζ)'],
       ['lắng', num(st.settle, 2) + ' s'],
       ['tất cả lắng', num(allSettled, 2) + ' s'],
     ].map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('');
@@ -560,6 +687,12 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
           ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = col; ctx.fillText(label + ' ' + num(v, 3), Math.min(x + 5, w - 78), y - 5);
         };
+        if (kfs.has(ui.sel)) {
+          kfs.get(ui.sel).forEach(([t, v]) => {
+            ctx.beginPath(); ctx.arc(xAt(t), mapY(v), 2.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#f6aa0e'; ctx.fill();
+          });
+        }
         mark(st.tPeak, st.peak, 'vượt', '#f6aa0e');
         mark(st.tRebound, st.rebound, 'nảy', '#7be3a0');
       }
@@ -610,6 +743,14 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
       ctx.font = '9px ui-monospace,Menlo,monospace';
       ctx.fillText(label + ' ' + num(v, 3), Math.min(x + 5, w - 76), y - 5);
     };
+    if (kfs.has(k)) {                                   // keyframe: điểm kéo được
+      kfs.get(k).forEach(([t, v]) => {
+        const x = xAt(t), y = mapY(v);
+        ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#0a0a12'; ctx.fill();
+        ctx.strokeStyle = ui.edit ? '#f6aa0e' : 'rgba(246,170,14,.55)'; ctx.lineWidth = 1.6; ctx.stroke();
+      });
+    }
     mark(st.tPeak, st.peak, 'vượt', '#f6aa0e');
     mark(st.tRebound, st.rebound, 'nảy', '#7be3a0');
     mark(st.settle, ui.dir === 1 ? 1 : 0, 'lắng', C.text);
@@ -618,20 +759,85 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   }
 
   // ---------- scrub / chọn cánh ----------
-  let scrub = false;
+  let scrub = false, kfDrag = -1;
   const timeFromX = (clientX) => {
     const r = dock.getBoundingClientRect();
     return ((clientX - r.left - PAD_L) / (r.width - PAD_L - PAD_R)) * DUR;
   };
+  const geoCurve = () => ({ y0: 20, y1: DH - 18, lo: -0.2, hi: 1.3 });
+  const yOf = (v) => { const g = geoCurve(); return g.y1 - ((v - g.lo) / (g.hi - g.lo)) * (g.y1 - g.y0); };
+  const vOf = (clientY) => {
+    const g = geoCurve(), r = dock.getBoundingClientRect();
+    return g.lo + ((g.y1 - (clientY - r.top)) / (g.y1 - g.y0)) * (g.hi - g.lo);
+  };
+  const hitKf = (e) => {
+    const pts = kfs.get(ui.sel);
+    if (!pts) return -1;
+    const r = dock.getBoundingClientRect();
+    let best = -1, bestD = 10;
+    pts.forEach(([t, v], i) => {
+      const d = Math.hypot(e.clientX - r.left - xAt(t), e.clientY - r.top - yOf(v));
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  };
+  const snapV = (v) => {
+    if (Math.abs(v) < 0.035) return 0;
+    if (Math.abs(v - 1) < 0.035) return 1;
+    return Math.max(-0.25, Math.min(1.3, v));
+  };
+  const paintKf = () => { applyKfs(); invalidateStatic(); setTime(ui.time); updateStats(); };
+  function moveKf(i, e) {
+    const pts = kfs.get(ui.sel);
+    if (!pts || !pts[i]) return;
+    const last = pts.length - 1;
+    const t = Math.max(0, Math.min(DUR, timeFromX(e.clientX)));
+    if (i === 0) pts[i][0] = 0;
+    else if (i === last) pts[i][0] = DUR;
+    else {
+      const lo = pts[i - 1][0] + 0.02, hi = pts[i + 1][0] - 0.02;
+      pts[i][0] = lo < hi ? Math.max(lo, Math.min(hi, t)) : pts[i][0];
+    }
+    pts[i][1] = snapV(vOf(e.clientY));
+    paintKf();
+  }
   dock.addEventListener('pointerdown', (e) => {
     dock.setPointerCapture?.(e.pointerId);
+    const r = dock.getBoundingClientRect(), inRuler = (e.clientY - r.top) < 20;
+    if (ui.edit && ui.tab === 'cv' && !inRuler && e.button === 0) {
+      setPlay(false);
+      const hit = hitKf(e);
+      if (hit >= 0) { kfDrag = hit; return; }
+      const pts = ensureKf(ui.sel);
+      const t = Math.max(0, Math.min(DUR, timeFromX(e.clientX)));
+      if (pts.every((q) => Math.abs(q[0] - t) > 0.04)) {
+        pts.push([t, snapV(vOf(e.clientY))]);
+        pts.sort((a, b) => a[0] - b[0]);
+        kfDrag = pts.findIndex((q) => q[0] === t);
+        paintKf();
+      }
+      return;
+    }
     scrub = true;
     setPlay(false);
     setTime(timeFromX(e.clientX));
   });
-  dock.addEventListener('pointermove', (e) => { if (scrub) setTime(timeFromX(e.clientX)); });
-  dock.addEventListener('pointerup', () => { scrub = false; });
-  dock.addEventListener('pointercancel', () => { scrub = false; });
+  dock.addEventListener('pointermove', (e) => {
+    if (kfDrag >= 0) { moveKf(kfDrag, e); return; }
+    if (scrub) setTime(timeFromX(e.clientX));
+  });
+  dock.addEventListener('pointerup', () => { scrub = false; kfDrag = -1; });
+  dock.addEventListener('pointercancel', () => { scrub = false; kfDrag = -1; });
+  dock.addEventListener('contextmenu', (e) => {
+    if (!ui.edit || ui.tab !== 'cv') return;
+    const hit = hitKf(e);
+    if (hit < 0) return;
+    e.preventDefault();
+    const pts = kfs.get(ui.sel);
+    if (pts.length <= 2) return;                       // giữ tối thiểu 2 điểm
+    pts.splice(hit, 1);
+    paintKf();
+  });
 
   // ô chọn cánh (dựng sau khi có insts)
   function buildPicker() {
@@ -648,6 +854,19 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   }
 
   // ---------- transport wiring ----------
+  $('edit').addEventListener('click', () => {
+    ui.edit = !ui.edit;
+    $('edit').classList.toggle('on', ui.edit);
+    if (ui.tab !== 'cv') { ui.tab = 'cv'; $('tab-cv').classList.add('on'); $('tab-tl').classList.remove('on'); }
+    if (ui.edit) { ensureKf(ui.sel); paintKf(); } else { invalidateStatic(); drawDock(); }
+  });
+  $('kfsin').addEventListener('click', () => { sinePreset(ui.sel); flash('sin → #' + ui.sel); });
+  $('kfdel').addEventListener('click', () => { dropKf(ui.sel); invalidateStatic(); setTime(ui.time); updateStats(); });
+  $('kfapp').addEventListener('click', () => {
+    const layer = insts[ui.sel].layer;
+    copyKf(ui.sel, insts.map((p, k) => k).filter((k) => insts[k].layer === layer && k !== ui.sel));
+  });
+  $('kfall').addEventListener('click', () => copyKf(ui.sel, insts.map((p, k) => k).filter((k) => k !== ui.sel)));
   $('play').addEventListener('click', () => setPlay(!ui.play));
   $('rewind').addEventListener('click', () => { setPlay(false); setTime(0); });
   $('loop').addEventListener('click', () => { ui.loop = !ui.loop; $('loop').classList.toggle('on', ui.loop); });
@@ -662,6 +881,139 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
     else if (e.key === 'r' || e.key === 'R') { setPlay(false); setTime(0); }
   });
 
+  // ============================================================
+  // params.json — xuất/nhận "thông số đã edit", nằm CÙNG CẤP với index.html
+  // (File System Access API để ghi thẳng vào thư mục; fallback: tải file về)
+  // ============================================================
+  const PARAMS_URL = './params.json';
+  let fileHandle = null;
+  function flash(msg) {
+    const el = $('flash');
+    if (!el) return;
+    el.textContent = msg;
+    clearTimeout(flash._t);
+    flash._t = setTimeout(() => { el.textContent = ''; }, 3000);
+  }
+
+  function snapshot() {
+    const kf = {};
+    for (const [k, pts] of kfs) kf[k] = pts.map(([t, v]) => [+t.toFixed(4), +v.toFixed(4)]);
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      axis: +AXIS_ANG.toFixed(4),
+      Q: Q.map((p) => [+(+p[0]).toFixed(2), +(+p[1]).toFixed(2)]),
+      petal: { N: RES.N, M: RES.M, w0: W.w0, w1: W.w1, w2: W.w2, t1: W.t1, t2: W.t2, lmax: +built.lmax.toFixed(3) },
+      bloom: { curl: HUE.curl, wrap: HUE.wrap, tilt: HUE.tilt, base: HUE.base, reflex: -0.12 },
+      motion: { tau: MOTION.tau, zeta: MOTION.zeta, stagger: MOTION.stagger, seedLag: MOTION.seedLag, massOuter: MOTION.massOuter },
+      layers: LAYERS.map((l) => ({ n: l.n, s: l.s, off: l.off })),
+      view: { dir: ui.dir, sel: ui.sel, loop: ui.loop, speed: ui.speed, time: +ui.time.toFixed(3) },
+      keyframes: kf,
+    };
+  }
+
+  function applyParams(d) {
+    if (!d || typeof d !== 'object') return false;
+    let geomDirty = false;
+    if (Array.isArray(d.Q) && d.Q.length === 4 && d.Q.every((p) => p && p.length === 2)) {
+      d.Q.forEach((p, i) => { Q[i][0] = +p[0]; Q[i][1] = +p[1]; });
+      geomDirty = true;
+    }
+    if (d.axis != null && Math.abs(+d.axis - AXIS_ANG) > 1e-9) { AXIS_ANG = +d.axis; geomDirty = true; }
+    if (d.petal) {
+      for (const k of ['w0', 'w1', 'w2', 't1', 't2']) if (d.petal[k] != null) W[k] = +d.petal[k];
+      if (d.petal.N) { RES.N = Math.max(16, Math.min(200, Math.round(d.petal.N))); geomDirty = true; }
+      if (d.petal.M) { RES.M = Math.max(6, Math.min(48, Math.round(d.petal.M))); geomDirty = true; }
+    }
+    if (d.bloom) for (const k of ['curl', 'wrap', 'tilt', 'base']) if (d.bloom[k] != null) HUE[k] = +d.bloom[k];
+    if (d.motion) for (const k of ['tau', 'zeta', 'stagger', 'seedLag', 'massOuter']) if (d.motion[k] != null) MOTION[k] = +d.motion[k];
+    if (Array.isArray(d.layers)) d.layers.slice(0, 2).forEach((l, i) => { if (l && l.s != null) LAYERS[i].s = +l.s; });
+    if (geomDirty) rebuildGeom();
+    if (U) {
+      U.uCurl.value = HUE.curl; U.uWrap.value = HUE.wrap; U.uTilt.value = HUE.tilt; U.uBase.value = HUE.base;
+      U.uLmax.value = built.lmax; U.uAxis.value.set(built.ax[0], built.ax[1]);
+    }
+    kfs.clear();
+    if (d.keyframes && typeof d.keyframes === 'object') {
+      for (const key of Object.keys(d.keyframes)) {
+        const k = +key, pts = d.keyframes[key];
+        if (!Number.isInteger(k) || k < 0 || k >= 18) continue;
+        if (!Array.isArray(pts) || pts.length < 2) continue;
+        kfs.set(k, pts.map(([t, v]) => [+t, +v]).sort((a, b) => a[0] - b[0]));
+      }
+    }
+    if (d.view) {
+      ui.dir = d.view.dir === 0 ? 0 : 1;
+      ui.sel = Math.max(0, Math.min(insts.length - 1, (d.view.sel | 0)));
+      ui.loop = d.view.loop !== false;
+      ui.speed = [0.25, 0.5, 1, 2].includes(+d.view.speed) ? +d.view.speed : 1;
+      if (d.view.time != null) ui.time = Math.max(0, Math.min(DUR, +d.view.time));
+    }
+    buildInsts();
+    syncInstAttrs();
+    simulate(ui.dir === 1 ? 0 : 1, ui.dir === 1 ? 1 : 0);
+    syncInputs();
+    [...$('dir').children].forEach((b, i) => b.classList.toggle('on', i === (ui.dir === 1 ? 0 : 1)));
+    $('loop').classList.toggle('on', ui.loop);
+    $('speed').value = String(ui.speed);
+    $('selpetal').value = String(ui.sel);
+    setPlay(false);
+    invalidateStatic();
+    setTime(ui.time || 0);
+    updateStats();
+    return true;
+  }
+
+  async function loadParams() {
+    const el = $('fileState');
+    try {
+      const res = await fetch(PARAMS_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      applyParams(d);
+      if (el) el.textContent = 'params.json: đã nạp · ' + (d.savedAt || '—');
+      flash('đã nạp params.json');
+      return true;
+    } catch (err) {
+      if (el) el.textContent = 'params.json: chưa có — đang dùng mặc định trong code';
+      return false;
+    }
+  }
+
+  // gọn hoá các cặp số [x, y] để file dễ đọc
+  const compactPairs = (txt) => txt.replace(/\[\s*(-?[\d.]+(?:e[-+]?\d+)?),\s*(-?[\d.]+(?:e[-+]?\d+)?)\s*\]/g, '[$1, $2]');
+
+  async function saveParams() {
+    const txt = compactPairs(JSON.stringify(snapshot(), null, 2)) + '\n';
+    const el = $('fileState');
+    try {
+      if (window.showSaveFilePicker) {
+        if (!fileHandle) {
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: 'params.json',
+            types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+          });
+        }
+        const w = await fileHandle.createWritable();
+        await w.write(txt);
+        await w.close();
+        if (el) el.textContent = 'params.json: vừa lưu (' + fileHandle.name + ')';
+        flash('đã ghi ' + fileHandle.name);
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' }));
+    a.download = 'params.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    if (el) el.textContent = 'params.json: đã tải về (chép vào debug/timeline/)';
+    flash('đã tải params.json');
+  }
+  $('save').addEventListener('click', saveParams);
+
   // ---------- boot ----------
   buildInsts();
   simulate(0, 1);
@@ -669,6 +1021,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
   if (SH) initGL();
   syncInputs();
   setTime(0);
+  await loadParams();                     // params.json cùng thư mục (nếu có) sẽ ghi đè mặc định
   addEventListener('resize', () => { resizeGL(); invalidateStatic(); });
   if (renderer) resizeGL();
 
@@ -697,7 +1050,7 @@ input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:
     AXIS_ANG, Q, W, RES, HUE, MOTION, LAYERS, DUR, RATE,
     get insts() { return insts; }, get curves() { return curves; }, get stats() { return stats; },
     get allSettled() { return allSettled; }, get renderer() { return renderer; },
-    state: ui, setTime, setPlay, recompute, simulate, resetView,
+    state: ui, setTime, setPlay, recompute, simulate, resetView, sine: SINE, sinePreset,
   };
 })();
 </script>

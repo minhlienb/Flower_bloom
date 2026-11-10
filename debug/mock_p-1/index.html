@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fleur — mock P0 · nở bung</title>
+<!--
+  Mock trạng thái P0 của trang chính, KHÔNG có HUD/timeline.
+  - Nạp ../timeline/params.json (Q · N/M · bloom v3 · motion).
+  - Dựng đúng P0 của main.js (camera + neo hull + tilt + orbit).
+  - CHỈ giữ nở bung: không intro, không độ trễ, không xoay — camera/tư thế đứng yên ở P0,
+    cánh chạy 18 lò xo từ nụ (open 0) tới 1 (có quá đà + nảy lại).
+  - Debug bằng console như trang chính: window.flower.getState() / .stats() / .replay()
+-->
+<style>
+  html,body{height:100%;margin:0;background:#0d0d15;overflow:hidden}
+  body{color:#eae5f3;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  canvas{position:fixed;inset:0;display:block;z-index:1}
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse at center,transparent 52%,rgba(4,4,9,.55) 100%)}
+  .grain{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:30px;
+    font:400 12px/1.6 ui-monospace,Menlo,monospace;color:#f6d79a;z-index:6}
+</style>
+</head>
+<body>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div id="err"></div>
+<script src="../../lib/three.min.js"></script>
+<script>
+(async () => {
+  'use strict';
+
+  // ============================================================
+  // P0 của main.js — để mock đứng đúng chỗ như trang chính
+  // ============================================================
+  const P0 = {
+    rx: 0.1157, ry: -0.1849, rz: 0.05, py: 16.9, scale: 1,
+    cam: { x: 40, y: -515, z: 650, fov: 37 },
+  };
+  const P0_ANCHOR = { right: 1.1, bottom: -0.9 };     // NDC: mép phải hoa 105% ngang, đáy 95% cao
+  const FRAME = { flowerW: 534, p0Fill: 0.85, p0Dist: Math.hypot(P0.cam.x, P0.cam.y, P0.cam.z) };
+  const RUN = 3.0;                                   // TỔNG thời gian chạy: rơi + bung, đúng 3 s
+  // RƠI TỪ TRÊN XUỐNG: gia tốc đều (ease-in), chạm đúng P0 rồi dừng (không nảy: chỉ còn 2 pha rơi + bung)
+  const FALL = { dist: 340, dur: 0.95 };
+  // MOTION của riêng mock (params.json chỉ cấp HÌNH DÁNG cánh): lò xo ζ<1 -> bung quá rồi nảy nhẹ
+  const MOTION = { tau: 0.28, zeta: 0.55, stagger: 0, seedLag: 0.08, massOuter: 1.12 };   // stagger 0: cánh trong KHÔNG trễ hơn lớp ngoài
+  const FLOW = { radius: 300, scale: 140, drag: 160, amp: 82 };
+  const WIND = { amp: 46, period: 3.4 };
+  const GLSL_FLOW = `#define R0 ${FLOW.radius.toFixed(1)}\n#define FLOW_SCALE ${FLOW.scale.toFixed(1)}\n`
+    + `#define DRAG ${FLOW.drag.toFixed(1)}\n#define WIND_AMP ${WIND.amp.toFixed(1)}\n#define WIND_PERIOD ${WIND.period.toFixed(1)}\n`;
+
+  // bảng màu "cool" mặc định của main.js
+  const PAL = {
+    ramp: ['#ff3d5a', '#c02ad0', '#8e56ea', '#c0adf4', '#b9c3ff'], deep: '#5a35c8',
+    glow: { halo: '#6b3df5', mid: '#d930a0', core: '#ff4d5c', streak: '#ff5966' },
+    bg: ['#0d0d16', '#171226'],
+  };
+  const LIGHT = { angle: 43, tone: 0.25, hi: 0.18, alpha: 0.2 };
+
+  // ---------- setup hình học: mặc định = params.json hiện tại, file ghi đè ----------
+  const DEFAULTS = {
+    axis: 1.0033,
+    Q: [[40, 370], [160, 510], [310, 270], [470, 430]],
+    petal: { N: 120, M: 28, w0: 0, w1: 63, w2: 49, t1: 0.30, t2: 0.72 },
+    bloom: { curl: 0.56, wrap: 0.8, tilt: 1.45, base: 40 },
+    motion: { tau: 0.28, zeta: 0.55, stagger: 0.35, seedLag: 0.08, massOuter: 1.12 },
+    layers: [{ n: 9, s: 0.47, off: 0 }, { n: 9, s: 0.30, off: 20 }],
+  };
+  let P = JSON.parse(JSON.stringify(DEFAULTS));
+  let paramsSource = 'mặc định trong code';
+
+  const bez = (a, b, c, d, t) => { const m = 1 - t; return m * m * m * a + 3 * m * m * t * b + 3 * m * t * t * c + t * t * t * d; };
+  const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // ---------- shader ----------
+  const parseChunks = (all) => {
+    const re = /^[ \t]*\/\/[ \t]*-{3,}[ \t]*([A-Z][A-Z0-9_]*)/gm;
+    const marks = []; let m;
+    while ((m = re.exec(all)) !== null) marks.push({ key: m[1], start: all.indexOf('\n', m.index) + 1 });
+    const sh = {};
+    for (let i = 0; i < marks.length; i++) {
+      const { key, start } = marks[i];
+      if (key in sh) continue;
+      sh[key] = all.slice(start, i + 1 < marks.length ? marks[i + 1].start : undefined).trim();
+    }
+    return sh;
+  };
+  const fail = (msg) => {
+    const el = document.getElementById('err');
+    el.style.display = 'grid';
+    el.textContent = msg;
+  };
+
+  let SH = null, PJSON = null;
+  try {
+    const [a, b, c] = await Promise.all([
+      fetch('../../shaders.glsl', { cache: 'no-store' }),
+      fetch('../bloom_v3.glsl', { cache: 'no-store' }),
+      fetch('../timeline/params.json', { cache: 'no-store' }),
+    ]);
+    if (!a.ok || !b.ok) throw new Error('shader HTTP ' + (a.ok ? '' : a.status + ' ') + (b.ok ? '' : b.status));
+    const main = parseChunks(await a.text());
+    SH = {
+      FRAG: main.FRAG, GLOW_VERT: main.GLOW_VERT, GLOW_FRAG: main.GLOW_FRAG,
+      VERT: GLSL_FLOW + parseChunks(await b.text()).VERT_V3,
+    };
+    if (c.ok) { PJSON = await c.json(); paramsSource = 'timeline/params.json'; }
+  } catch (err) {
+    fail('Không tải được shader (' + err.message + '). Chạy HTTP ở thư mục gốc: npx serve .');
+  }
+  if (SH && PJSON) {
+    const d = PJSON;
+    if (Array.isArray(d.Q) && d.Q.length === 4) d.Q.forEach((p, i) => { P.Q[i][0] = +p[0]; P.Q[i][1] = +p[1]; });
+    if (d.axis != null) P.axis = +d.axis;
+    if (d.petal) for (const k of ['N', 'M', 'w0', 'w1', 'w2', 't1', 't2']) if (d.petal[k] != null) P.petal[k] = +d.petal[k];
+    if (d.bloom) for (const k of ['curl', 'wrap', 'tilt', 'base']) if (d.bloom[k] != null) P.bloom[k] = +d.bloom[k];
+    if (Array.isArray(d.layers)) d.layers.slice(0, 2).forEach((l, i) => { if (l && l.s != null) P.layers[i].s = +l.s; });
+  }
+  P.petal.N = Math.max(16, Math.min(200, Math.round(P.petal.N)));
+  P.petal.M = Math.max(6, Math.min(48, Math.round(P.petal.M)));
+
+  // ---------- dựng một cánh (y hệt createGeometries của main.js, thay bằng P) ----------
+  function buildPetal() {
+    const { N, M, w0, w1, w2, t1, t2 } = P.petal, Q = P.Q, V = N * M;
+    const pos = new Float32Array(V * 3), aPetal = new Float32Array(V * 2), aBake = new Float32Array(V * 3);
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1), s = 2 * t - 1;
+      const Ax = bez(Q[0][0], Q[1][0], Q[2][0], Q[3][0], t);
+      const Ay = bez(Q[0][1], Q[1][1], Q[2][1], Q[3][1], t);
+      const len = Math.hypot(Ax, Ay) || 1, nx = Ay / len, ny = -Ax / len;
+      const stx = nx * s * w0, sty = ny * s * w0;
+      const c1x = t1 * Ax + nx * s * w1, c1y = t1 * Ay + ny * s * w1;
+      const c2x = t2 * Ax + nx * s * w2, c2y = t2 * Ay + ny * s * w2;
+      for (let j = 0; j < M; j++) {
+        const u = j / (M - 1), o = (i * M + j) * 3;
+        pos[o] = bez(stx, c1x, c2x, Ax, u);
+        pos[o + 1] = bez(sty, c1y, c2y, Ay, u);
+        pos[o + 2] = t;
+      }
+    }
+    const ax = [Math.cos(P.axis), Math.sin(P.axis)];
+    let lmax = 0;
+    for (let k = 0; k < V; k++) lmax = Math.max(lmax, pos[k * 3] * ax[0] + pos[k * 3 + 1] * ax[1]);
+    if (!(lmax > 1e-6)) lmax = 1;
+    for (let k = 0; k < V; k++) {
+      const x = pos[k * 3], y = pos[k * 3 + 1];
+      const u = Math.max(0, Math.min(1.1, (x * ax[0] + y * ax[1]) / lmax));
+      aPetal[k * 2] = u; aPetal[k * 2 + 1] = Math.pow(u, 1.25);
+      const rho = Math.min(1.2, Math.hypot(x, y) / FLOW.radius);
+      aBake[k * 3] = rho; aBake[k * 3 + 1] = Math.pow(rho, 1.6); aBake[k * 3 + 2] = Math.pow(rho, 1.4);
+    }
+    const lineIdx = [], rimIdx = [], fillIdx = [];
+    for (let i = 0; i < N; i++) for (let j = 0; j < M - 1; j++) lineIdx.push(i * M + j, i * M + j + 1);
+    for (let i = 0; i < N - 1; i++) {
+      rimIdx.push(i * M + M - 1, (i + 1) * M + M - 1);
+      for (let j = 0; j < M - 1; j++) {
+        const p0 = i * M + j, b = p0 + 1, c = p0 + M, d = c + 1;
+        fillIdx.push(p0, b, c, b, d, c);
+      }
+    }
+    return { pos, aPetal, aBake, lineIdx, rimIdx, fillIdx, lmax, ax };
+  }
+
+  // ---------- curve nở lấy từ params.json ----------
+  // Chuẩn hoá: thời gian tính lại từ điểm đầu của curve (0 s), giá trị kéo hai đầu về đúng 0 (nụ) và 1 (P0),
+  // GIỮ NGUYÊN phần vượt đích / nảy lại ở giữa — đó chính là "quán tính" đã vẽ trong timeline.
+  const RAW_KF = (PJSON && PJSON.keyframes) ? PJSON.keyframes : null;
+
+  // Nhịp: NHANH từ đầu tới đỉnh (đoạn bung), CHẬM lại ở đoạn bounce/lắng.
+  // Chia curve tại đỉnh rồi co/giãn thời gian hai bên — tại đỉnh tiếp tuyến = 0 nên không gãy vận tốc.
+  const TIMING = { rise: 0.55, tail: 1.6 };     // rise < 1: bung nhanh hơn; tail > 1: nảy/lắng chậm hơn
+
+  function normCurve(raw) {
+    if (!Array.isArray(raw) || raw.length < 2) return null;
+    const pts = raw.map(([t, v]) => [+t, +v]).sort((a, b) => a[0] - b[0]);
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+    const v0 = pts[0][1], v1 = pts[pts.length - 1][1];
+    if (t1 - t0 < 1e-3) return null;
+    const scale = Math.abs(v1 - v0) > 1e-3 ? 1 / (v1 - v0) : 1;      // kéo đầu cuối về 0 → 1
+    const out = pts.map(([t, v]) => [Math.max(0, t - t0), (v - v0) * scale]);   // thời gian tính từ điểm đầu
+    out[0][0] = 0; out[0][1] = 0;
+    out[out.length - 1][1] = 1;
+    // cắt đuôi phẳng: keyframe cuối chỉ giữ tới điểm ĐẦU TIÊN chạm 1 -> settle = lúc hoa yên, không phải hết 5 s
+    let last = out.length - 1;
+    while (last > 1 && Math.abs(out[last - 1][1] - 1) < 1e-3) last--;
+    const trimmed = out.slice(0, last + 1);
+    trimmed[trimmed.length - 1][1] = 1;
+
+    // --- re-time: nhanh tới đỉnh rồi chậm lại ---
+    let iP = 0;
+    trimmed.forEach((q, i) => { if (q[1] > trimmed[iP][1]) iP = i; });
+    const tp = trimmed[iP][0], tailApplies = iP > 0 && iP < trimmed.length - 1;
+    const remap = (t) => (t <= tp || !tailApplies)
+      ? t * TIMING.rise
+      : tp * TIMING.rise + (t - tp) * TIMING.tail;
+    trimmed.forEach((q) => { q[0] = remap(q[0]); });
+
+    return {
+      pts: trimmed, dur: trimmed[trimmed.length - 1][0],
+      peak: Math.max(...trimmed.map((q) => q[1])), tPeak: tp * TIMING.rise, tailApplies,
+    };
+  }
+  // Hermite MONOTONE (Fritsch–Carlson): đi qua đúng từng keyframe, không tự nảy thêm giữa 2 điểm.
+  // Nhờ vậy "quán tính" trong hình chỉ đến từ curve bạn vẽ (vượt đích / nảy lại), không phải do nội suy.
+  function slopes(pts) {
+    const n = pts.length, m = new Array(n);
+    if (n < 2) return m.fill(0);
+    const d = [];
+    for (let i = 0; i < n - 1; i++) d[i] = (pts[i + 1][1] - pts[i][1]) / Math.max(1e-6, pts[i + 1][0] - pts[i][0]);
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) m[i] = 0;                        // đỉnh/đáy: tiếp tuyến 0 -> giữ đúng cực trị
+      else {
+        const avg = (d[i - 1] + d[i]) / 2, lim = 3 * Math.min(Math.abs(d[i - 1]), Math.abs(d[i]));
+        m[i] = Math.sign(avg) * Math.min(Math.abs(avg), lim);     // chặn để không vọt quá
+      }
+    }
+    return m;
+  }
+  function hermite(pts, t) {
+    const n = pts.length;
+    if (n < 2 || t <= pts[0][0]) return pts[0][1];
+    if (t >= pts[n - 1][0]) return pts[n - 1][1];
+    let i = 0;
+    while (i < n - 2 && t > pts[i + 1][0]) i++;
+    const p0 = pts[i], p1 = pts[i + 1];
+    const seg = Math.max(1e-4, p1[0] - p0[0]);
+    const u = (t - p0[0]) / seg, u2 = u * u, u3 = u2 * u;
+    const m = pts._m || (pts._m = slopes(pts));
+    const m0 = m[i] * seg, m1 = m[i + 1] * seg;
+    return (2 * u3 - 3 * u2 + 1) * p0[1] + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1[1] + (u3 - u2) * m1;
+  }
+
+  // ---------- 18 cánh (hướng radial) + hull dáng nghỉ để neo P0 ----------
+  const B = buildPetal();
+  const inst = [];
+  P.layers.forEach((L, li) => {
+    for (let j = 0; j < L.n; j++) {
+      const T = (L.off + j * 360 / L.n) * Math.PI / 180, mir = j % 2 ? -1 : 1;
+      const eff = mir === 1 ? P.axis : Math.PI - P.axis;
+      const seed = (j * 0.37 + li * 0.21) % 1, idx = inst.length;
+      inst.push({
+        rot: T - eff, s: L.s, mir, seed, layer: li,
+        curlK: 0.90 + seed * 0.20, wrapK: 0.92 + seed * 0.16, tiltK: 0.88 + seed * 0.24,
+        tStart: seed * MOTION.seedLag,                          // không độ trễ theo lớp; chỉ lệch vài ms theo seed
+        tau: MOTION.tau * (0.88 + seed * 0.24) * (li === 0 ? MOTION.massOuter : 1),
+        curve: normCurve(RAW_KF && RAW_KF[String(idx)]),           // curve riêng của cánh (nếu có)
+        open: 0, vel: 0,
+      });
+    }
+  });
+
+  function convexHull() {
+    const { N, M } = P.petal, hp = [];
+    for (const p of inst) {
+      const c = Math.cos(p.rot), s = Math.sin(p.rot);
+      for (let i = 0; i < N; i++) for (let j = 0; j < M; j++) {
+        if (i !== 0 && i !== N - 1 && j !== 0 && j !== M - 1) continue;
+        const o = (i * M + j) * 3, x = B.pos[o] * p.mir, y = B.pos[o + 1];
+        hp.push([(c * x - s * y) * p.s, (s * x + c * y) * p.s]);
+      }
+    }
+    hp.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of hp) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = hp.length - 1; i >= 0; i--) {
+      const q = hp[i];
+      while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+      up.push(q);
+    }
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+  const hull = convexHull();
+  // Ép tổng thời gian bung vừa RUN (3 s) — co giãn thời gian curve, giữ nguyên hình (giá trị) và tỉ lệ
+  {
+    const maxStart = Math.max(...inst.map((p) => p.tStart));
+    const maxDur = Math.max(...inst.map((p) => (p.curve ? p.curve.dur : 0)));
+    if (maxDur > 0) {
+      const k = Math.max(0.02, (RUN - maxStart) / maxDur);
+      inst.forEach((p) => {
+        if (!p.curve) return;
+        p.curve.pts.forEach((q) => { q[0] *= k; });
+        delete p.curve.pts._m;                             // slope cache phải tính lại theo thời gian mới
+        p.curve.dur *= k; p.curve.tPeak *= k;
+      });
+    }
+  }
+  const LAST_START = Math.max(...inst.map((p) => p.tStart + (p.curve ? p.curve.dur : 0)));   // cánh cuối cùng xong curve
+
+  // ---------- three ----------
+  if (!SH) return;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(P0.cam.fov, 1, 10, 4000);
+  const group = new THREE.Group(); scene.add(group);
+
+  const col = (h) => new THREE.Color(h);
+  const lightA = LIGHT.angle * Math.PI / 180;
+  const U = {
+    uAmp: { value: FLOW.amp }, uEnergy: { value: 0.16 }, uPhase: { value: 0 }, uDrift: { value: 0 },
+    uTime: { value: 0 }, uWind: { value: 0.35 }, uLmax: { value: B.lmax },
+    uAxis: { value: new THREE.Vector2(B.ax[0], B.ax[1]) },
+    uCurl: { value: P.bloom.curl }, uWrap: { value: P.bloom.wrap },
+    uTilt: { value: P.bloom.tilt }, uBase: { value: P.bloom.base },
+    uOver: { value: 0.9 },
+    uLag: { value: 0.45 },
+    uGdir: { value: new THREE.Vector2(320, 410).normalize() },
+    uLight: { value: new THREE.Vector2(Math.cos(lightA), Math.sin(lightA)) },
+    uLightK: { value: new THREE.Vector3(LIGHT.tone, LIGHT.hi, LIGHT.alpha) },
+    uC0: { value: col(PAL.ramp[0]) }, uC1: { value: col(PAL.ramp[1]) }, uC2: { value: col(PAL.ramp[2]) },
+    uC3: { value: col(PAL.ramp[3]) }, uC4: { value: col(PAL.ramp[4]) }, uDeep: { value: col(PAL.deep) },
+  };
+  const mat = (alpha) => new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uAlpha: { value: alpha } }, U),
+    vertexShader: SH.VERT, fragmentShader: SH.FRAG,
+    transparent: true, depthWrite: false, depthTest: false,
+  });
+
+  // glow: mask bake 1 lần (chép từ main.js)
+  function bakeGlowTexture(size) {
+    const data = new Uint8Array(size * size * 4);
+    const clamp01v = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+    const sstep = (e0, e1, x) => { const t = clamp01v((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+    for (let y = 0; y < size; y++) {
+      const py = (y + 0.5) / size * 2 - 1;
+      for (let x = 0; x < size; x++) {
+        const px = (x + 0.5) / size * 2 - 1;
+        const r = Math.hypot(px, py), a = Math.atan2(py, px);
+        const caus = 0.5 + 0.5 * Math.sin(px * 9) * Math.sin(py * 8);
+        const halo = Math.exp(-r * r * 6) * (0.85 + 0.3 * caus);
+        const mid = Math.exp(-r * r * 40);
+        const core = Math.exp(-r * r * 220);
+        const streak = Math.pow(Math.max(0, Math.cos(9 * a)), 28) * Math.exp(-r * 7) * sstep(0, 0.08, r);
+        const edge = 1 - sstep(0.85, 1, r);
+        const o = (y * size + x) * 4;
+        data[o] = Math.round(clamp01v(halo * edge) * 255);
+        data[o + 1] = Math.round(clamp01v(mid * edge) * 255);
+        data[o + 2] = Math.round(clamp01v(core * edge) * 255);
+        data[o + 3] = Math.round(clamp01v(streak * edge) * 255);
+      }
+    }
+    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+  }
+  const glowTex = bakeGlowTexture(256);
+  const glowU = {
+    uEnergy: U.uEnergy, uPhase: U.uPhase, uGlowTex: { value: glowTex },
+    uHalo: { value: col(PAL.glow.halo) }, uMid: { value: col(PAL.glow.mid) },
+    uCore: { value: col(PAL.glow.core) }, uStreak: { value: col(PAL.glow.streak) },
+  };
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.ShaderMaterial({
+    uniforms: glowU, vertexShader: SH.GLOW_VERT, fragmentShader: SH.GLOW_FRAG,
+    transparent: true, depthWrite: false, depthTest: false,
+  }));
+  glow.renderOrder = 0; group.add(glow);
+
+  // ---------- geometry instanced ----------
+  const n = inst.length;
+  const posAttr = new THREE.BufferAttribute(B.pos, 3);
+  const aPetalAttr = new THREE.BufferAttribute(B.aPetal, 2);
+  const aBakeAttr = new THREE.BufferAttribute(B.aBake, 3);
+  const iData = new Float32Array(n * 4), iData2 = new Float32Array(n * 3), iRot = new Float32Array(n * 4);
+  inst.forEach((p, k) => {
+    iData.set([0, p.s, p.mir, p.seed], k * 4);
+    iData2.set([p.curlK, p.wrapK, p.tiltK], k * 3);
+    iRot.set([Math.cos(p.rot), Math.sin(p.rot), Math.pow(p.s, 1.6), Math.pow(p.s, 1.4)], k * 4);
+  });
+  const iOpenAttr = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+  iOpenAttr.setUsage(THREE.DynamicDrawUsage);
+  const geo = (idx) => {
+    const g = new THREE.InstancedBufferGeometry();
+    g.setAttribute('position', posAttr);
+    g.setAttribute('aPetal', aPetalAttr);
+    g.setAttribute('aBake', aBakeAttr);
+    g.setAttribute('iData', new THREE.InstancedBufferAttribute(iData, 4));
+    g.setAttribute('iData2', new THREE.InstancedBufferAttribute(iData2, 3));
+    g.setAttribute('iRot', new THREE.InstancedBufferAttribute(iRot, 4));
+    g.setAttribute('iOpen', iOpenAttr);
+    g.setIndex(idx);
+    g.instanceCount = n;
+    return g;
+  };
+  // độ đậm giống trang chính: fill .05 · gân .20 · viền .62
+  [[B.fillIdx, 0.05, THREE.Mesh, 1], [B.lineIdx, 0.20, THREE.LineSegments, 2], [B.rimIdx, 0.62, THREE.LineSegments, 3]]
+    .forEach(([idx, alpha, Kind, order]) => {
+      const o = new Kind(geo(idx), mat(alpha));
+      o.frustumCulled = false; o.renderOrder = order; group.add(o);
+    });
+
+  // ---------- camera P0: neo mép phải/đáy bằng hull (giải lặp như main.js) ----------
+  const p0Cam = new THREE.PerspectiveCamera(P0.cam.fov, 1, 10, 4000);
+  const p0Rot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(P0.rx, P0.ry, P0.rz, 'XYZ'));
+  const tmpV = new THREE.Vector3();
+  const hullWorld = hull.map(([x, y]) => {
+    const v = new THREE.Vector3(x, y, 0).applyMatrix4(p0Rot);
+    v.y += P0.py;
+    return v;
+  });
+  const p0 = { k: 1, cx: 0, cy: 0, cz: 0, lx: 0, ly: 0 };
+
+  function solveP0(aspect) {
+    p0.k = Math.max(1, (FRAME.flowerW / FRAME.p0Fill)
+      / (2 * Math.tan(THREE.MathUtils.degToRad(P0.cam.fov / 2)) * aspect) / FRAME.p0Dist);
+    const cx = P0.cam.x * p0.k, cy = P0.cam.y * p0.k, cz = P0.cam.z * p0.k;
+    p0Cam.aspect = aspect; p0Cam.fov = P0.cam.fov;
+    p0Cam.position.set(cx, cy, cz); p0Cam.updateProjectionMatrix();
+    const dist = Math.hypot(cx, cy - P0.py, cz);
+    const halfH = dist * Math.tan(THREE.MathUtils.degToRad(P0.cam.fov / 2)), halfW = halfH * aspect;
+    let lx = -190 * p0.k, ly = 140 * p0.k;
+    for (let it = 0; it < 6; it++) {
+      p0Cam.lookAt(lx, ly, 0); p0Cam.updateMatrixWorld(true);
+      let maxX = -Infinity, minY = Infinity;
+      for (const v of hullWorld) {
+        tmpV.copy(v).project(p0Cam);
+        if (tmpV.x > maxX) maxX = tmpV.x;
+        if (tmpV.y < minY) minY = tmpV.y;
+      }
+      const ex = P0_ANCHOR.right - maxX, ey = P0_ANCHOR.bottom - minY;
+      if (Math.abs(ex) < 5e-4 && Math.abs(ey) < 5e-4) break;
+      lx -= ex * halfW; ly -= ey * halfH;
+    }
+    p0.cx = cx; p0.cy = cy; p0.cz = cz; p0.lx = lx; p0.ly = ly;
+  }
+
+  // dpr theo ngân sách điểm ảnh như main.js
+  const PR_BUDGET = 5.8e6;
+  const dprCap = (w, h) => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt(PR_BUDGET / Math.max(1, w * h))));
+  const fit = () => {
+    const w = innerWidth, h = innerHeight;
+    renderer.setPixelRatio(dprCap(w, h));
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    solveP0(camera.aspect);
+  };
+  addEventListener('resize', fit);
+  fit();
+
+  // ---------- trạng thái intro: P(-1) -> P(0) ----------
+  const S = {
+    time: 0, playing: false, done: false, settled: false, open: 0,   // time = đồng hồ phát (dừng được)
+  };
+  const resetBloom = () => {
+    S.time = 0; S.done = false; S.settled = false; S.open = 0;
+    for (const p of inst) { p.open = 0; p.vel = 0; }
+    iOpenAttr.needsUpdate = true;
+  };
+  const play = () => { if (S.settled) resetBloom(); S.playing = true; };
+  const pause = () => { S.playing = false; };
+  const replay = () => { resetBloom(); S.playing = true; };
+  // Space: play/pause — nếu đã nở xong thì chạy lại từ nụ. Click canvas: tương tự. R: chạy lại.
+  const toggle = () => { if (S.playing) pause(); else play(); };
+  addEventListener('click', toggle);
+  addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    else if (e.key === 'r' || e.key === 'R') replay();
+  });
+
+  // ---------- stats (giống trang chính, chỉ ở console) ----------
+  const FT_N = 240, ftBuf = new Float32Array(FT_N);
+  let ftI = 0, ftCount = 0, ftLast = 0;
+  const pctl = (arr, p) => arr.length ? arr[Math.max(0, Math.min(arr.length - 1, Math.round(p * (arr.length - 1))))] : 0;
+  const summarize = (buf, count, cap) => {
+    const nn = Math.min(count, cap);
+    const arr = Array.from(buf.subarray(0, nn)).sort((a, b) => a - b);
+    const avg = nn ? arr.reduce((a, b) => a + b, 0) / nn : 0;
+    return {
+      n: nn, fps: avg ? +(1000 / avg).toFixed(1) : 0,
+      avg: +avg.toFixed(2), p50: +pctl(arr, 0.5).toFixed(2),
+      p95: +pctl(arr, 0.95).toFixed(2), p99: +pctl(arr, 0.99).toFixed(2), max: +pctl(arr, 1).toFixed(2),
+      jank: nn ? +(arr.filter((v) => v > 25).length / nn).toFixed(3) : 0,
+      drop: nn ? +(arr.filter((v) => v > 16.7).length / nn).toFixed(3) : 0,
+    };
+  };
+  const ndcBounds = () => {
+    let maxX = -Infinity, minY = Infinity;
+    for (const v of hullWorld) {
+      tmpV.copy(v).project(camera);
+      if (tmpV.x > maxX) maxX = tmpV.x;
+      if (tmpV.y < minY) minY = tmpV.y;
+    }
+    return { right: +maxX.toFixed(4), bottom: +minY.toFixed(4) };
+  };
+
+  // ---------- vòng lặp ----------
+  const clock = new THREE.Clock();
+  let openArr = iOpenAttr.array;
+  renderer.setAnimationLoop(() => {
+    try {
+    const nowMs = performance.now();
+    if (ftLast) { ftBuf[ftI] = nowMs - ftLast; ftI = (ftI + 1) % FT_N; if (ftCount < FT_N) ftCount++; }
+    ftLast = nowMs;
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+    if (S.playing) S.time += dt;                            // đồng hồ phát: dừng khi pause
+    const since = S.time;                                   // KHÔNG còn envelope tư thế: camera/hoa đứng ở P0
+
+    // nở: theo curve của params (hoặc lò xo cho cánh không có curve) — chỉ chạy khi playing
+    if (S.playing && !S.settled) {
+      let busy = false, any = 0;
+      inst.forEach((p, k) => {
+        if (since < p.tStart) { busy = true; openArr[k] = p.open; return; }
+        const tl = since - p.tStart;
+        if (p.curve) {
+          // bám curve của params: đúng hình đã vẽ (kể cả vượt đích + nảy lại)
+          p.open = tl >= p.curve.dur ? 1 : hermite(p.curve.pts, tl);
+          if (tl < p.curve.dur) busy = true;
+        } else {
+          // cánh không có curve: lò xo như cũ
+          const w = 1 / p.tau, c = 2 * MOTION.zeta * w;
+          p.vel += (w * w * (1 - p.open) - c * p.vel) * dt;
+          p.open += p.vel * dt;
+          if (Math.abs(1 - p.open) < 3e-3 && Math.abs(p.vel) < 3e-3) { p.open = 1; p.vel = 0; } else busy = true;
+        }
+        openArr[k] = p.open;
+        any = Math.max(any, p.open);
+      });
+      iOpenAttr.needsUpdate = true;
+      S.open = any;
+      if (since >= LAST_START) S.done = true;
+      if (!busy && S.done) { S.settled = true; S.open = 1; S.playing = false; }   // nở xong -> dừng đồng hồ phát
+    }
+
+    // CHỈ 2 pha: RƠI (nhanh dần đều) + BUNG (curve). Không orbit/breathe/tilt/gió động.
+    U.uTime.value = 0; U.uPhase.value = 0;                 // đóng băng lớp gió/flow: cánh đứng yên
+    U.uEnergy.value = 0.16;
+    const uFall = clamp01(since / FALL.dur);
+    const fallY = FALL.dist * (1 - uFall * uFall);          // chạm P0 đúng u = 1, không nảy
+    group.position.x = 0;
+    group.position.y = P0.py + fallY;
+    group.scale.setScalar(1);
+    group.rotation.x = P0.rx;
+    group.rotation.y = P0.ry;
+    group.rotation.z = P0.rz;
+
+    // camera: đứng yên ở P0 (không zoom, không trồi)
+    camera.position.set(p0.cx, p0.cy, p0.cz);
+    camera.fov = P0.cam.fov;
+    camera.lookAt(p0.lx, p0.ly, 0);
+
+    renderer.render(scene, camera);
+    } catch (err) { if (!window.__loopErr) { window.__loopErr = String(err); console.error('loop:', err); } }
+  });
+
+  // ---------- API console: giống trang chính ----------
+  window.flower = {
+    renderer, scene, camera, group, params: P, motion: MOTION, timing: TIMING, fall: FALL, paramsSource, inst, U,
+    get curves() { return inst.map((p) => (p.curve ? { dur: +p.curve.dur.toFixed(3), peak: +p.curve.peak.toFixed(3), tPeak: +p.curve.tPeak.toFixed(3), pts: p.curve.pts } : null)); },
+    replay, play, pause, toggle,
+    get playing() { return S.playing; },
+    getState: () => ({
+      s: 0, g: 0,
+      cam: camera.position.toArray().map((v) => +v.toFixed(1)),
+      fov: camera.fov,
+      rot: [group.rotation.x, group.rotation.y, group.rotation.z].map((v) => +v.toFixed(3)),
+      introK: 0, rotK: 0,                                  // đã bỏ envelope tư thế (giữ key cho giống API trang chính)
+      spin: 0,
+      open: +S.open.toFixed(3),
+      introDone: S.done, introSettled: S.settled, playing: S.playing,
+    }),
+    stats: (full = true) => {
+      const ft = summarize(ftBuf, ftCount, FT_N);
+      return {
+        frames: ft.n, fps: ft.fps, avg: ft.avg, p50: ft.p50, p95: ft.p95, p99: ft.p99, max: ft.max,
+        jank: ft.jank, drop: ft.drop,
+        intro: { k: 0, rot: 0, spin: 0, open: +S.open.toFixed(3), done: S.done, settled: S.settled },
+        scroll: { y: 0, max: 0, blend: 0 },
+        vp: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
+        ...(full ? { flower: ndcBounds() } : {}),
+      };
+    },
+  };
+})();
+</script>
+</body>
+</html>
