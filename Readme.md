@@ -107,6 +107,20 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
   từ nụ), **click** = play/pause, **`R`** = chạy lại từ đầu; API: `flower.play() / .pause() / .toggle() / .replay()`,
   `flower.playing`; `getState()` có thêm khoá `playing`.
 
+## License
+
+The source code written by the author (HTML/CSS/JS/GLSL) is licensed under
+**PolyForm Noncommercial 1.0.0** — see `LICENSE`.
+
+You may read, study, fork and use it for personal or non-commercial purposes.
+Commercial use (selling it, or shipping it inside a product or service that
+generates revenue) requires a separate written permission.
+
+Third-party libraries in `lib/` and the fonts in `font/` keep their own
+licenses — see `THIRD-PARTY-NOTICES.md`.
+
+Commercial licensing: minhlien2077@gmail.com
+
 ## Hiệu ứng đã bỏ
 
 Hai lớp phủ full-screen từng nằm trong `index.html` + `styles.css`. Bỏ vì đo được **~0.85 ms/frame task
