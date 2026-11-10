@@ -129,6 +129,14 @@ html::-webkit-scrollbar-corner{background:transparent}
   @keyframes progress-fill{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 }
 
+/* Mobile / thiết bị cảm ứng: bỏ HẲN scrollbar tuỳ biến + hairline tiến trình.
+   Chrome Android dùng overlay scrollbar (chỉ hiện khi cuộn, không style được) nên đây là no-op
+   về hiển thị, nhưng tắt luôn cho chắc và để hairline không chiếm mép phải màn hình hẹp. */
+@media (pointer:coarse), (max-width:640px){
+  html{scrollbar-width:none}
+  html::-webkit-scrollbar{width:0;height:0;display:none}
+  .progress{display:none}
+}
 @media (max-width:640px){
   /* Mobile: chừa lề an toàn cho tai thỏ, bớt padding ngang để câu thơ không gãy vụn */
   .sec{min-height:100vh;min-height:100svh;
