@@ -4,8 +4,10 @@ Portfolio một trang cho frontend/3D web: một bông hoa Three.js chạy theo 
 case study kỹ thuật. **6 section**: Hero · About · Work · Craft · Stack · Contact.
 
 Chuyển động: P0 (cận cảnh) → P1 (toàn cảnh, lò xo "nặng"), spin 2 rad theo quán tính.
-Màu: mỗi section một bảng màu (`THEMES` trong `main.js`) — 01–02 mực tím, 03 blue `#0051ff`,
-04 teal, 05 warm, 06 giấy sáng; nội suy liên tục theo tiến trình scroll. Sắc nền đổi bằng 2 lớp
+Màu: mỗi section một bảng màu (`THEMES` trong `main.js`) — 01 mực tím, 02 Plum-Rose, 03 Charcoal-Bone,
+04 Forest-Lime, 05 Ink-Ice `#0051ff`, 06 giấy sáng (caustic xanh); nội suy liên tục theo tiến trình scroll.
+Nền giấy ở 06 dùng caustic màu cứng `#0051ff`, nên ramp ở đó phải lệch hue so với xanh — bảng màu xanh
+trùng nền sẽ mất hút (xem `debug/sections6.png`). Sắc nền đổi bằng 2 lớp
 `.tone` cross-fade (chỉ ghi `opacity`, không repaint). Chữ màu sáng suốt trang; khi nền đã sáng
 (`paper > 0.45`) `--ink` đổi sang mực tối **một lần**, phần mượt do `transition: color .7s`.
 Đội bụi nước bay lên một đợt lúc curtain mở (220 nốt, tự tắt sau 3.6 s).
@@ -48,6 +50,8 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
   `window.flower.getState()` → `{ s, theme, cam, fov, rot, spin, open, begun, arrived }` (s>1 = lò xo quá đà;
   `theme` = tiến trình màu 0…5 theo section;
   `arrived: true` = lò xo P1→P0 đã lắng hẳn).
+- `window.flower.setPalette({ ramp:[5 hex], deep, glow:{halo,mid,core,streak}, tone, toneA, paper })` —
+  áp **một** bảng màu cho cả 6 theme (so màu trên cùng bố cục); bỏ qua field nào không truyền.
 - `debug/petal/` — soi một cánh, dáng cố định (dùng chung `shaders.glsl`).
 - `debug/petal_bud/` — orbit + sửa dáng cánh: kéo **Q0–Q3** và tay nắm **w1/w2** trên canvas,
   số liệu Q nhập theo **hệ trục u** (`s` dọc trục, `t` ngang trục; `t=0` = điểm nằm trên trục), giữ

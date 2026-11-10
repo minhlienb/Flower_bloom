@@ -58,6 +58,14 @@ canvas{position:fixed;inset:0;display:block;z-index:1;opacity:1;transition:opaci
 .sectitle .ch{display:inline-block;opacity:0;transform:translateY(.3em) rotate(4deg);filter:blur(7px);
   transition:opacity 1.1s ease,transform 1.1s cubic-bezier(.22,.9,.26,1),filter 1.1s ease,color .7s cubic-bezier(.4,0,.2,1);will-change:filter,transform}
 .sec.vin .sectitle .ch{opacity:1;transform:none;filter:blur(0)}
+
+/* ---------- html.lean: zoom trình duyệt lớn (dpr>=3) hoặc màn hẹp ----------
+   Khi zoom 500%, 1 glyph tiêu đề = ~440 device px nên `filter: blur(7px)` thành ~70px blur phải raster lại
+   cho từng ký tự mỗi lần section đổi trạng thái; `text-shadow 24px` cũng nhân 10. Ở chế độ này bỏ blur/shadow,
+   giữ nguyên hiệu ứng opacity + translate (rẻ, compositor lo) để scroll và transition không tụt fps. */
+html.lean .sectitle .ch{filter:none;will-change:auto}
+html.lean .sec.vin .sectitle .ch{filter:none}
+html.lean .verse{text-shadow:0 1px 2px rgba(0,0,0,.45)}
 /* Lật trắng (section 4 -> section 5): nền trắng DƯỚI canvas (z-index 0 < canvas 1) — chỉ đổi màu bg, hoa vẫn nguyên */
 .daylight{position:fixed;inset:0;z-index:0;pointer-events:none;background:#f5f4f0;opacity:0}
 /* Sắc nền theo section: 2 lớp cross-fade, chỉ đổi opacity -> compositor lo, không repaint mỗi frame */

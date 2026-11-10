@@ -67,22 +67,23 @@ const PALETTES = {
   warm: { ramp: ['#f6aa0e', '#7c2262', '#a057a1', '#c694cb', '#f9dfe4'], deep: '#450724',
           glow: { halo: '#a057a1', mid: '#7c2262', core: '#f6aa0e', streak: '#fcd17b' }, bg: ['#150c11', '#251119'], ink: '#f2e7dc' },
 };
-// Bảng màu theo SECTION (6 section): 01–02 mực tím, 03 xanh #0051ff, 04 teal, 05 warm, 06 giấy sáng.
+// Bảng màu theo SECTION (6 section): 01 mực tím · 02 PLUM ROSE · 03 CHARCOAL BONE · 04 FOREST LIME · 05 INK ICE · 06 giấy xanh.
 // `tone` = lớp phủ nền (đổi sắc nền, KHÔNG đổi màu chữ); `paper` = độ lật nền sáng (0..1).
+// Nền giấy (06) giữ caustic xanh hard-code #0051ff nên ramp ở đó cũng phải lệch hue so với xanh: xanh navy + neutrals.
 const THEMES = [
   { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
-  { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
-  // --- Bảng màu material (ảnh tham chiếu: FOREST MOSS · SAGE MOSS · SOFT BONE · WARM TAUPE · WALNUT BARK · CHARCOAL STONE) ---
-  // Dùng cho section 03–05; section 01–02 (intro) và 06 (giấy) giữ bảng màu gốc.
-  { ramp: ['#8E9A5E', '#7A8552', '#A3AD76', '#CBD0A8', '#EEE7DE'], deep: '#2A2E1B',   // FOREST / SAGE MOSS
-    glow: { halo: '#4A5232', mid: '#7A8552', core: '#EEE7DE', streak: '#F6F2E9' },
-    tone: '#33402A', toneA: 0.72, paper: 0 },
-  { ramp: ['#A3AD76', '#B7BE8E', '#C9CFA6', '#DEDCCB', '#EEE7DE'], deep: '#4A4F35',   // SAGE MOSS / SOFT BONE
-    glow: { halo: '#6B7248', mid: '#A3AD76', core: '#EEE7DE', streak: '#F7F4EC' },
-    tone: '#43423E', toneA: 0.65, paper: 0 },                                          // nền CHARCOAL STONE
-  { ramp: ['#684C36', '#8A6B52', '#BAA99A', '#D6CBC1', '#EEE7DE'], deep: '#3A2B20',   // WALNUT BARK / WARM TAUPE
-    glow: { halo: '#5A4130', mid: '#8A6B52', core: '#D6CBC1', streak: '#EEE7DE' },
-    tone: '#4A3424', toneA: 0.70, paper: 0 },
+  { ramp: ['#7C2262', '#A057A1', '#C694CB', '#E6C9E0', '#FBF2F7'], deep: '#2E0B24',   // PLUM / ROSE
+    glow: { halo: '#5A1640', mid: '#A057A1', core: '#F5DCEC', streak: '#FFF3F9' },
+    tone: '#1C0817', toneA: 0.60, paper: 0 },
+  { ramp: ['#56524F', '#8C8781', '#BAA99A', '#DAD4CC', '#EEE7DE'], deep: '#232220',   // CHARCOAL STONE / SOFT BONE
+    glow: { halo: '#3A3836', mid: '#8C8781', core: '#EEE7DE', streak: '#F7F4EC' },
+    tone: '#141416', toneA: 0.90, paper: 0 },
+  { ramp: ['#87A33C', '#6E8A2F', '#9DBB55', '#C9D89B', '#F2F5E6'], deep: '#1F2A10',   // FOREST / LIME
+    glow: { halo: '#4C6A16', mid: '#87A33C', core: '#DCEBAE', streak: '#F5FADF' },
+    tone: '#101A0C', toneA: 0.70, paper: 0 },
+  { ramp: ['#0051FF', '#2A6CFF', '#6EA3FF', '#C4DDFF', '#F4F9FF'], deep: '#031338',   // INK / ICE
+    glow: { halo: '#0030B8', mid: '#0051FF', core: '#E8F3FF', streak: '#FFFFFF' },
+    tone: '#071026', toneA: 0.75, paper: 0 },
   { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#f5f4f0', toneA: 0.0, paper: 1 },  // giấy: hoa vẫn xanh như ảnh tham chiếu
 ];
 // Ánh sáng có hướng: ảnh B sáng dần về phía trên-phải (~43° theo hồi quy độ sáng), tối dần về dưới-trái.
@@ -238,14 +239,16 @@ function bakeCausticTile(renderer, size, phase) {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bakeMat);
   bakeScene.add(quad);
 
+  // Viewport của RenderTarget tính bằng DEVICE px. Đừng dùng renderer.setViewport(size, size): three nhân
+  // giá trị đó với pixelRatio, nên khi pixelRatio < 1 (màn > 1200p) bake chỉ phủ ~size*pr -> phần còn lại
+  // của tile là đen, mép đen đó hiện thành dải/vệt cứng trên nền giấy. Đặt thẳng rt.viewport.
+  rt.viewport.set(0, 0, size, size);
+  rt.scissor.set(0, 0, size, size);
   const prevTarget = renderer.getRenderTarget();
-  const prevViewport = new THREE.Vector4(); renderer.getViewport(prevViewport);
   renderer.setRenderTarget(rt);
-  renderer.setViewport(0, 0, size, size);
   renderer.setScissorTest(false);
   renderer.render(bakeScene, bakeCam);
-  renderer.setRenderTarget(prevTarget);
-  renderer.setViewport(prevViewport);
+  renderer.setRenderTarget(prevTarget);   // three tự trả viewport về kích thước canvas
 
   quad.geometry.dispose(); bakeMat.dispose();
   return rt;
@@ -382,7 +385,18 @@ async function initScene(shaders) {
   // Giới hạn pixel ratio theo ngân sách fill-rate: 2K@2x (5120×2880) tụt còn ~45–60 FPS,
   // trong khi 2K@1.25x (3200×1800) vẫn 120 FPS và gần như không khác biệt với hoa mềm.
   const PR_BUDGET = 5.8e6;                            // ~5.8 triệu điểm ảnh canvas để giữ 120 FPS
-  const dprCap = (w, h) => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt(PR_BUDGET / Math.max(1, w * h))));
+  // Ngưỡng tính bằng PIXEL VẬT LÝ: Windows/macOS scale 200% trên màn 2560x1600 -> innerHeight chỉ 800 (CSS),
+  // nên phải nhân devicePixelRatio mới biết là màn lớn. Chỉ áp cho màn rộng thật (không bắt phone dpr 3).
+  const BIG_PHYS_H = 1200;                            // > 1200p vật lý (1440p/1600p/4K/ultrawide)
+  const PR_BUDGET_BIG = 3.2e6;                        // ~ -45% pixel so với ngân sách thường
+  const dprCap = (w, h) => {
+    const dpr = devicePixelRatio || 1;
+    const big = h * dpr > BIG_PHYS_H && w >= 900;      // màn lớn, không phải điện thoại (kể cả xoay ngang)
+    const cap = Math.sqrt((big ? PR_BUDGET_BIG : PR_BUDGET) / Math.max(1, w * h));
+    return big
+      ? Math.max(0.6, Math.min(dpr, cap))              // resolution scale của three: 0.6x .. dpr
+      : Math.max(1, Math.min(dpr, 2, cap));            // màn thường: như cũ
+  };
   renderer.setPixelRatio(dprCap(innerWidth, innerHeight));
   renderer.domElement.style.opacity = '0';   // chỉ hiện khi begin(): tránh nháy hoa ở P1 trước khi curtain mở
   document.body.appendChild(renderer.domElement);
@@ -633,8 +647,21 @@ async function initScene(shaders) {
     p0Look.x = lx; p0Look.y = ly;
   };
 
+  // "lean" = trình duyệt đang zoom lớn hoặc màn hẹp: glyph phải raster ở 10x device px, nên blur từng ký tự
+  // (7px CSS -> 70px device) và skew mỗi frame trên khối chữ lớn là thứ đốt raster nhiều nhất. Xem styles.css.
+  let lean = false;
+  const LEAN_FORCE = new URLSearchParams(location.search).get('lean');   // ?lean=1 | ?lean=0 để A/B trên máy thật
+  const setLean = () => {
+    const next = LEAN_FORCE === '1' ? true : LEAN_FORCE === '0' ? false
+      : (devicePixelRatio >= 3 || innerWidth < 560);
+    if (next === lean) return;
+    lean = next;
+    document.documentElement.classList.toggle('lean', lean);
+    if (lean) { secs.forEach((el) => { el.style.transform = ''; }); }   // xoá skew còn sót
+  };
   const fit = () => {
     const w = innerWidth, h = innerHeight;
+    setLean();
     renderer.setPixelRatio(dprCap(w, h));             // giữ ngân sách fill-rate khi đổi kích thước / màn retina
     renderer.setSize(w, h);
     camera.aspect = w / h; camera.position.z = frameZ(camera.aspect);
@@ -798,13 +825,13 @@ async function initScene(shaders) {
     const smax = scrollMax;                          // cache từ measureLayout(): không đọc scrollHeight mỗi frame (forced layout)
     const f = smax > 0 ? Math.max(0, Math.min(1, scrollY / smax)) : 0;
     // A3: chữ nghiêng theo dòng chảy — skewY phản ứng vận tốc cuộn thật (px/s), lắng mượt bằng lag mũ
-    if (dt > 0) {
+    if (dt > 0 && !lean) {
       const vel = (scrollY - lastY) / dt; lastY = scrollY;
       const tgt = Math.max(-4.5, Math.min(4.5, vel * 0.0028));
       skew += (tgt - skew) * (1 - Math.exp(-dt * 7));
       const t = Math.abs(skew) < 0.02 ? '' : 'skewY(' + skew.toFixed(3) + 'deg)';
       if (t !== lastSkewT) { secs.forEach(el => el.style.transform = t); lastSkewT = t; }
-    }
+    } else if (dt > 0) lastY = scrollY;
     // Verse/tiêu đề hiện khi section trôi qua giữa khung nhìn (tâm viewport trong biên của section)
     const vc = scrollY + innerHeight * 0.5;
     const key = secs.map((el, i) => (secBounds[i] && secBounds[i][0] <= vc && vc < secBounds[i][1]) ? '1' : '0').join('');
@@ -921,6 +948,25 @@ async function initScene(shaders) {
   };
   window.flower = { U, glowU, dustU, cauU, iDustU, renderer, cauRT, glowTex, dustSprite, camera, group, p0Look,
     setOpen: (v) => bakeOpen(v, true), dispose,
+    // Debug palette: áp MỘT bảng màu cho tất cả theme (so màu hoa trên cùng bố cục).
+    // flower.setPalette({ ramp:[5], deep, glow:{halo,mid,core,streak}, tone, toneA, paper })
+    setPalette: (p) => {
+      if (!p || !Array.isArray(p.ramp) || p.ramp.length !== 5) return false;
+      for (let i = 0; i < THEMES.length; i++) {
+        const t = THEMES[i];
+        t.ramp = p.ramp.slice();
+        if (p.deep) t.deep = p.deep;
+        if (p.glow) t.glow = { halo: p.glow.halo, mid: p.glow.mid, core: p.glow.core, streak: p.glow.streak };
+        if (p.tone !== undefined) t.tone = p.tone;
+        if (p.toneA !== undefined) t.toneA = p.toneA;
+        if (p.paper !== undefined) t.paper = p.paper;
+        TH[i].ramp = t.ramp.map((h) => new THREE.Color(h));
+        TH[i].deep = new THREE.Color(t.deep);
+        TH[i].glow = ['halo', 'mid', 'core', 'streak'].map((k) => new THREE.Color(t.glow[k]));
+      }
+      toneIdx = -1;                       // buộc vẽ lại lớp nền
+      return true;
+    },
     // Đo NDC mép hoa (dùng hull dáng nghỉ) — kiểm tra neo bottom 5% / right -5%
     ndcBounds,
     // Debug (giữ lại): frame time + vị trí element + trạng thái hạ cánh/scroll
