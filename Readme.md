@@ -1,7 +1,14 @@
-# ThreeJS — Fleur, hoa chìm trong nước
+# ThreeJS — portfolio 3D (hoa chìm trong nước)
 
-Trang một bông hoa Three.js chạy theo scroll: P0 (cận cảnh) → P1 (toàn cảnh, lò xo "nặng"),
-spin 2 rad theo quán tính, đổi bảng màu xanh `#0051ff` ở section 3, lật nền trắng ở cuối trang.
+Portfolio một trang cho frontend/3D web: một bông hoa Three.js chạy theo scroll, dùng chính nó làm
+case study kỹ thuật. **6 section**: Hero · About · Work · Craft · Stack · Contact.
+
+Chuyển động: P0 (cận cảnh) → P1 (toàn cảnh, lò xo "nặng"), spin 2 rad theo quán tính.
+Màu: mỗi section một bảng màu (`THEMES` trong `main.js`) — 01–02 mực tím, 03 blue `#0051ff`,
+04 teal, 05 warm, 06 giấy sáng; nội suy liên tục theo tiến trình scroll. Sắc nền đổi bằng 2 lớp
+`.tone` cross-fade (chỉ ghi `opacity`, không repaint). Chữ màu sáng suốt trang; khi nền đã sáng
+(`paper > 0.45`) `--ink` đổi sang mực tối **một lần**, phần mượt do `transition: color .7s`.
+Đội bụi nước bay lên một đợt lúc curtain mở (220 nốt, tự tắt sau 3.6 s).
 
 > **P(-1) ≡ P1**: lúc load, hoa đứng đúng ở trạng thái P1 (camera fit, spin đủ 2 rad, `open = 1`)
 > rồi lò xo `P_TWEEN` + lag `P_SPIN` hạ về P0 — cùng một code path với lúc cuộn ngược từ cuối trang
@@ -38,7 +45,8 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
 ## Kiểm thử
 
 - `/` — trang chính. Trạng thái tween/spin/màu/độ lật trắng đọc từ console:
-  `window.flower.getState()` → `{ s, g, cam, fov, rot, spin, open, begun, arrived }` (s>1 = lò xo quá đà;
+  `window.flower.getState()` → `{ s, theme, cam, fov, rot, spin, open, begun, arrived }` (s>1 = lò xo quá đà;
+  `theme` = tiến trình màu 0…5 theo section;
   `arrived: true` = lò xo P1→P0 đã lắng hẳn).
 - `debug/petal/` — soi một cánh, dáng cố định (dùng chung `shaders.glsl`).
 - `debug/petal_bud/` — orbit + sửa dáng cánh: kéo **Q0–Q3** và tay nắm **w1/w2** trên canvas,
