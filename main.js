@@ -520,6 +520,60 @@ async function initScene(shaders) {
   dust.frustumCulled = false;
   dust.renderOrder = -0.5; scene.add(dust);   // vẽ trước cả glow: quầng sáng phủ lên bụi như sương
 
+  // ---- BỤI INTRO: một đợt nốt nước bay lên đúng lúc curtain mở (P(-1) -> P0) ----
+  // Dùng lại sprite đã bake. 140 nốt additive trải z -260..+60 nên có nốt đi TRƯỚC hoa, có nốt sau,
+  // tạo cảm giác chiều sâu khi camera tiến vào. Chạy một lần, tự tắt khi xong -> 0 chi phí sau intro.
+  const IDUST = { n: 220, spread: 1800, k: 3400, dur: 3.6, opacity: 0.7 };
+  const iDustGeo = new THREE.BufferGeometry();
+  {
+    const ip = new Float32Array(IDUST.n * 3), isz = new Float32Array(IDUST.n), isd = new Float32Array(IDUST.n);
+    let sd = 777003;                                    // LCG cố định -> cùng một cơn bụi mỗi lần load
+    const rnd = () => (sd = (sd * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < IDUST.n; i++) {
+      ip[i * 3] = (rnd() - 0.5) * IDUST.spread;
+      ip[i * 3 + 1] = (rnd() - 0.5) * 260;              // quanh tâm: shader tự nâng lên
+      ip[i * 3 + 2] = -260 + rnd() * 320;               // trước/sau hoa
+      isz[i] = 1.2 + rnd() * 3.0;
+      isd[i] = rnd();
+    }
+    iDustGeo.setAttribute('position', new THREE.BufferAttribute(ip, 3));
+    iDustGeo.setAttribute('aSize', new THREE.BufferAttribute(isz, 1));
+    iDustGeo.setAttribute('aSeed', new THREE.BufferAttribute(isd, 1));
+  }
+  const iDustU = { uT: { value: 0 }, uPixel: dustU.uPixel, uK: { value: IDUST.k },
+                   uOpacity: { value: 0 }, uColor: U.uC3, uSprite: { value: dustSprite } };
+  const iDust = new THREE.Points(iDustGeo, new THREE.ShaderMaterial({
+    uniforms: iDustU, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+    vertexShader: [
+      'uniform float uT, uPixel, uK;',
+      'attribute float aSize, aSeed;',
+      'varying float vA;',
+      'void main(){',
+      '  float t = clamp((uT - aSeed * 0.28) / 0.72, 0.0, 1.0);',      // lệch nhịp: nốt sau lên muộn
+      '  float e = 1.0 - pow(1.0 - t, 2.2);',                          // ease-out: bốc nhanh rồi chậm
+      '  vec3 p = position;',
+      '  p.y += mix(-560.0, 1500.0, e) * (0.75 + 0.5 * aSeed);',        // bay LÊN, tầm xa khác nhau
+      '  p.x += sin(aSeed * 31.4 + t * 3.6) * 90.0 * e;',               // lắc ngang tăng dần
+      '  p.z += cos(aSeed * 17.7 + t * 2.8) * 60.0 * e;',
+      '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+      '  gl_PointSize = clamp(aSize * uPixel * uK / max(1.0, -mv.z), 2.0, 34.0);',
+      '  gl_Position = projectionMatrix * mv;',
+      '  vA = smoothstep(0.0, 0.16, t) * (1.0 - smoothstep(0.62, 1.0, t));',  // hiện rồi tan
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform vec3 uColor; uniform float uOpacity; uniform sampler2D uSprite;',
+      'varying float vA;',
+      'void main(){',
+      '  float a = texture2D(uSprite, gl_PointCoord).a;',
+      '  gl_FragColor = vec4(uColor, a * vA * uOpacity);',
+      '}',
+    ].join('\n'),
+  }));
+  iDust.frustumCulled = false;
+  iDust.renderOrder = 0.5; iDust.visible = false; scene.add(iDust);   // giữa glow (0) và fill (1)
+  let iDustT = 0;
+
   const frameZ = (aspect) => Math.max(760, FRAME.flowerW / FRAME.p1Fill / aspect)
     / (2 * Math.tan(THREE.MathUtils.degToRad(17.5)));   // giữ chiều cao 760, nhưng đảm bảo đủ ngang cho hoa trên màn dọc
 
@@ -748,6 +802,11 @@ async function initScene(shaders) {
     dustU.uDrift.value = scrollY * DUST.driftK;          // bụi trôi chậm hơn trang -> tầng xa
     dustU.uOpacity.value = DUST.opacity * (1 - dayBlend);
     dust.visible = dayBlend < 0.99;    // giấy trắng phủ hết -> thôi vẽ 80 nốt (0 work)
+    // Bụi intro: một đợt duy nhất kể từ lúc curtain mở; xong thì tắt hẳn object (0 draw, 0 fill)
+    if (begun && iDustT < 1) iDustT = Math.min(1, iDustT + dt / IDUST.dur);
+    iDustU.uT.value = iDustT;
+    iDustU.uOpacity.value = IDUST.opacity * (1 - smoothstep(0.86, 1, iDustT));
+    iDust.visible = begun && iDustT < 0.999;
     const day = dayBlend > 0.55;
     if (day !== dayOn) {
       dayOn = day;
@@ -818,10 +877,11 @@ async function initScene(shaders) {
     ac.abort(); trigger?.kill(); renderer.setAnimationLoop(null);
     group.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
     dust.geometry.dispose(); dust.material.dispose();     // bụi nằm ngoài group — dọn riêng
+    iDust.geometry.dispose(); iDust.material.dispose();   // bụi intro cũng vậy
     glowTex.dispose(); dustSprite.dispose(); cauRT.dispose();   // texture/RT bake
     renderer.dispose(); renderer.domElement.remove();
   };
-  window.flower = { U, glowU, dustU, cauU, renderer, cauRT, glowTex, dustSprite, camera, group, p0Look,
+  window.flower = { U, glowU, dustU, cauU, iDustU, renderer, cauRT, glowTex, dustSprite, camera, group, p0Look,
     setOpen: (v) => bakeOpen(v, true), dispose,
     // Đo NDC mép hoa (dùng hull dáng nghỉ) — kiểm tra neo bottom 5% / right -5%
     ndcBounds,
