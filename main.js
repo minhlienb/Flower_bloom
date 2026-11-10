@@ -374,7 +374,12 @@ async function initScene(shaders) {
   const G = createGeometries();
   const PAL = PALETTES[new URLSearchParams(location.search).get('palette')] || PALETTES.cool;
   const bgGrad = `radial-gradient(ellipse at center, ${PAL.bg[0]} 0%, ${PAL.bg[1]} 100%)`;
-  document.documentElement.style.background = `${bgGrad} fixed`;
+  // Longhand thay vì shorthand: giữ background-color đặc phía dưới, để rãnh scrollbar / vùng overscroll
+  // không lộ trắng. `--bg0` cũng là màu nền của thanh cuộn tuỳ biến trong styles.css.
+  document.documentElement.style.backgroundColor = PAL.bg[0];
+  document.documentElement.style.backgroundImage = bgGrad;
+  document.documentElement.style.backgroundAttachment = 'fixed';
+  document.documentElement.style.setProperty('--bg0', PAL.bg[0]);
   const loaderEl = document.getElementById('loader');
   if (loaderEl) loaderEl.style.background = bgGrad;   // curtain trùng nền trang, không lộ đường nối khi wipe
   document.documentElement.style.setProperty('--ink', PAL.ink);   // chữ ngà theo bảng màu

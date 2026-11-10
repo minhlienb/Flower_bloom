@@ -99,6 +99,59 @@ cuộn trong thẻ iOS Safari và momentum sau khi buông — tránh dừng đ�
   từ nụ), **click** = play/pause, **`R`** = chạy lại từ đầu; API: `flower.play() / .pause() / .toggle() / .replay()`,
   `flower.playing`; `getState()` có thêm khoá `playing`.
 
+## Hiệu ứng đã bỏ
+
+Hai lớp phủ full-screen từng nằm trong `index.html` + `styles.css`. Bỏ vì đo được **~0.85 ms/frame task
+(≈20% main thread)** trong lúc cuộn, trong khi ở cường độ cũ gần như không nhìn thấy (chênh lệch ảnh
+gần như bằng 0; nền vốn đã gần đen `#0d0d16`).
+
+### `.vignette` — tối bốn góc
+
+```html
+<div class="vignette" aria-hidden="true"></div>
+```
+```css
+.vignette{position:fixed;inset:0;pointer-events:none;z-index:2;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(4,4,9,.55) 100%)}
+```
+
+Mục đích: dồn mắt vào nhụy hoa, tạo cảm giác chìm/viền tối như ảnh chụp, giấu mép canvas (`fixed inset:0`)
+và tách chữ khỏi nền. Nó nằm **trên** canvas (z-index 2 > 1) nên có làm tối cả cánh hoa ở rìa.
+Vấn đề: nhân alpha 0.55 lên nền gần đen chỉ đổi ~7 mức RGB → gần như vô hình, tức trả tiền cho một
+hiệu ứng không ai thấy.
+
+### `.grain` — nhiễu phim phủ trên cùng
+
+```html
+<div class="grain" aria-hidden="true"></div>
+```
+```css
+.grain{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+```
+
+Mục đích: (1) chống **banding** trên gradient tối rất mịn (nền radial, quầng nhụy, caustics) — thêm nhiễu
+±1–2 mức để mắt không thấy vằn bậc; (2) phủ hạt lên cả chữ (z-index 5 > `.sec` 4) cho cảm giác in giấy/phim.
+Vấn đề: opacity 0.05 chỉ thêm ~±3 mức trên thang 255 → dưới ngưỡng thấy, không đạt mục đích (1) lẫn (2).
+
+### Số đo (Chromium 1280×800, quét 220 frame, median 3 lượt, layout giữ nguyên)
+
+| cấu hình | task/frame | style/frame |
+|---|---|---|
+| có grain + vignette | 4.14 ms | 0.69 ms |
+| bỏ grain | 3.89 ms | 0.55 ms |
+| bỏ cả hai | 3.29 ms | 0.55 ms |
+
+Đối chứng: ẩn chữ (`visibility:hidden`, giữ layout) **không** đổi task (3.60 → 3.52 ms), và tắt
+`transition`/`filter` của từng ký tự `.ch` cũng không cải thiện → chi phí nằm ở hai layer phủ, không ở text.
+
+### Nếu muốn dựng lại
+
+Đừng dùng layer full-screen. Bake vào shader để chi phí rơi vào pixel của chính vật thể:
+- **vignette**: trong FRAG cánh hoa, nhân màu/alpha với hệ số tối theo `gl_FragCoord` (radial falloff),
+  và/hoặc gộp vào `radial-gradient` nền trong `main.js` (`document.documentElement.style.background`).
+- **grain**: nhiễu hash theo `gl_FragCoord` ở pass composite (hoặc thêm vào FRAG cánh hoa), cường độ
+  0.08–0.12 mới thực sự thấy; 0.05 là vô nghĩa.
 
 ## TODO
 
