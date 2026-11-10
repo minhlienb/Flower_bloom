@@ -608,6 +608,13 @@ async function initScene(shaders) {
   let tiltX = 0, tiltY = 0;             // base nghiêng (chuột + offset P0) — trước khi cộng spin
   let spinProg = 1;                     // tiến trình xoay riêng: lag mũ, không quá đà (quán tính không lùi)
   let colorBlend = 0, colorVel = 0;     // lò xo cho lerp màu P1->P2: đổi chậm, chút quá đà rồi lắng
+  // TEST branch: ?skew=off  -> tắt hẳn (không ghi style nào)
+  //              ?skew=raw  -> y như bản cũ (toFixed(3), ghi mỗi khi chuỗi đổi)
+  //              ?skew=0.1  -> (mặc định) lượng tử 0.1°: chỉ ghi khi lệch >= 0.1°
+  const SKEW_Q = new URLSearchParams(location.search).get('skew');
+  const SKEW_OFF = SKEW_Q === 'off';
+  const SKEW_STEP = (SKEW_Q === 'raw' || SKEW_OFF) ? 0 : (parseFloat(SKEW_Q) || 0.1);
+  let skewWrites = 0;                              // số lần ghi style.transform — để so chi phí 2 chế độ
   let skew = 0, lastY = scrollY, lastSkewT = '';  // A3: chữ nghiêng theo vận tốc cuộn, lắng mượt
   let vinKey = '';                      // .vin theo tâm section: đổi chỉ khi trạng thái đổi (không churn style)
   let dayBlend = 0, dayOn = false;      // lật trắng sec4->sec5 (lag mũ, không quá đà); caustics = quad shader (cauU.uDay)
@@ -683,6 +690,7 @@ async function initScene(shaders) {
       jank: ft.jank, drop: ft.drop,
       arrivalFt: { ...arrt, maxAt: arrMaxAt },            // maxAt: frame tệ nhất rơi vào lúc nào (ms từ reveal)
       arrival: { begun, arrived, spin: +spinProg.toFixed(3), open: +U.uOpen.value.toFixed(3) },
+      skew: { writes: skewWrites, step: SKEW_OFF ? 0 : SKEW_STEP, off: SKEW_OFF },
       scroll: { y: Math.round(scrollY), max: Math.round(scrollMax), blend: +scrollBlend.toFixed(3) },
       vp: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
       ...(full ? {
@@ -717,13 +725,15 @@ async function initScene(shaders) {
     const smax = scrollMax;                          // cache từ measureLayout(): không đọc scrollHeight mỗi frame (forced layout)
     const f = smax > 0 ? Math.max(0, Math.min(1, scrollY / smax)) : 0;
     // A3: chữ nghiêng theo dòng chảy — skewY phản ứng vận tốc cuộn thật (px/s), lắng mượt bằng lag mũ
-    if (dt > 0) {
+    if (!SKEW_OFF && dt > 0) {
       const vel = (scrollY - lastY) / dt; lastY = scrollY;
       const tgt = Math.max(-4.5, Math.min(4.5, vel * 0.0028));
       skew += (tgt - skew) * (1 - Math.exp(-dt * 7));
-      const t = Math.abs(skew) < 0.02 ? '' : 'skewY(' + skew.toFixed(3) + 'deg)';
-      if (t !== lastSkewT) { secs.forEach(el => el.style.transform = t); lastSkewT = t; }
-    }
+      // lượng tử trước khi so chuỗi: 0.1° là ngưỡng mắt không phân biệt được ở cỡ chữ này
+      const qv = SKEW_STEP ? Math.round(skew / SKEW_STEP) * SKEW_STEP : skew;
+      const t = Math.abs(qv) < 0.02 ? '' : 'skewY(' + qv.toFixed(SKEW_STEP ? 1 : 3) + 'deg)';
+      if (t !== lastSkewT) { secs.forEach(el => el.style.transform = t); lastSkewT = t; skewWrites++; }
+    } else if (SKEW_OFF) { lastY = scrollY; }
     // Verse/tiêu đề hiện khi section trôi qua giữa khung nhìn (tâm viewport trong biên của section)
     const vc = scrollY + innerHeight * 0.5;
     const key = secs.map((el, i) => (secBounds[i] && secBounds[i][0] <= vc && vc < secBounds[i][1]) ? '1' : '0').join('');
@@ -803,7 +813,7 @@ async function initScene(shaders) {
     if (hud && nowMs - hudLast > 400) {
       hudLast = nowMs;
       const s = stats(false);                          // bản nhẹ: không đọc layout -> HUD không tự gây jank
-      hud.textContent = `fps ${s.fps}  ft ${s.avg}  p95 ${s.p95}  p99 ${s.p99}  max ${s.max}  jank ${(s.jank * 100).toFixed(0)}%\n`
+      hud.textContent = `fps ${s.fps}  ft ${s.avg}  p95 ${s.p95}  p99 ${s.p99}  max ${s.max}  jank ${(s.jank * 100).toFixed(0)}%  skew ${s.skew.writes}w/${s.skew.step || 'off'}\n`
         + `arrival ft p95 ${s.arrivalFt.p95}  max ${s.arrivalFt.max}@${(s.arrivalFt.maxAt / 1000).toFixed(1)}s  n ${s.arrivalFt.n}\n`
         + `arrival begun ${s.arrival.begun ? 'y' : 'n'} settled ${s.arrival.arrived ? 'y' : 'n'} spin ${s.arrival.spin} open ${s.arrival.open}\n`
         + `scroll ${s.scroll.y}/${s.scroll.max}  blend ${s.scroll.blend}  ${s.vp.w}x${s.vp.h}`;
