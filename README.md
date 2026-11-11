@@ -1,6 +1,6 @@
 # Fleur — Real-time 3D Web Portfolio
 
-**Minh Liên** — 3D web / frontend engineer · Đà Lạt, Vietnam
+**Minh Liên** — 3D web / frontend engineer · Ho Chi Minh City, Vietnam (Relocating)
 
 **Live: <https://minhlienb.vercel.app>**
 
