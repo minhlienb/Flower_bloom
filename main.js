@@ -2,6 +2,11 @@
 // Flower — Main Script
 // ============================================================
 
+// ES modules thuần (không bundler — site deploy tĩnh nguyên thư mục). Vercel deploy cả thư mục src/.
+import { PALETTES, THEMES } from './src/palette.js';
+import { createCaustics } from './src/caustics.js';
+import { createDust } from './src/dust.js';
+
 const N = 120, M = 28;
 // Nở TỪ TRONG RA: lớp trong (cánh ngắn, s=0.30) bung trước và mở xong sớm (delayEnd 0.70);
 // lớp ngoài (cánh dài, s=0.47) chỉ bắt đầu khi open > 0.45 rồi mở tới cuối -> hoa bung từ nhụy ra.
@@ -54,38 +59,7 @@ const FRAME = {
   p1Fill: 0.65,          // P1 (các màn sau): hoa chiếm ~65% bề ngang
   p0Dist: Math.hypot(P0.cam.x, P0.cam.y, P0.cam.z),
 };
-// P2: bảng màu "chìm sâu" — section 2->3 lerp toàn bộ shader về tông xanh #0051ff
-const P2_COL = {
-  ramp: ['#012187', '#0044ef', '#0051ff', '#6ea3ff', '#cfe2ff'],
-  deep: '#031338',
-  glow: { halo: '#0030b8', mid: '#0051ff', core: '#6ea3ff', streak: '#aecbff' },
-};
-// Bảng màu nền tối: mực tím trên giấy đen, chữ ngà. Đổi bảng bằng ?palette=warm trên URL.
-const PALETTES = {
-  cool: { ramp: ['#ff3d5a', '#c02ad0', '#8e56ea', '#c0adf4', '#b9c3ff'], deep: '#5a35c8',
-          glow: { halo: '#6b3df5', mid: '#d930a0', core: '#ff4d5c', streak: '#ff5966' }, bg: ['#0d0d16', '#171226'], ink: '#eae5f3' },
-  warm: { ramp: ['#f6aa0e', '#7c2262', '#a057a1', '#c694cb', '#f9dfe4'], deep: '#450724',
-          glow: { halo: '#a057a1', mid: '#7c2262', core: '#f6aa0e', streak: '#fcd17b' }, bg: ['#150c11', '#251119'], ink: '#f2e7dc' },
-};
-// Bảng màu theo SECTION (6 section): 01 mực tím · 02 PLUM ROSE · 03 CHARCOAL BONE · 04 FOREST LIME · 05 INK ICE · 06 giấy xanh.
-// `tone` = lớp phủ nền (đổi sắc nền, KHÔNG đổi màu chữ); `paper` = độ lật nền sáng (0..1).
-// Nền giấy (06) giữ caustic xanh hard-code #0051ff nên ramp ở đó cũng phải lệch hue so với xanh: xanh navy + neutrals.
-const THEMES = [
-  { ...PALETTES.cool, tone: '#0d0d16', toneA: 0.0, paper: 0 },
-  { ramp: ['#7C2262', '#A057A1', '#C694CB', '#E6C9E0', '#FBF2F7'], deep: '#2E0B24',   // PLUM / ROSE
-    glow: { halo: '#5A1640', mid: '#A057A1', core: '#F5DCEC', streak: '#FFF3F9' },
-    tone: '#1C0817', toneA: 0.60, paper: 0 },
-  { ramp: ['#56524F', '#8C8781', '#BAA99A', '#DAD4CC', '#EEE7DE'], deep: '#232220',   // CHARCOAL STONE / SOFT BONE
-    glow: { halo: '#3A3836', mid: '#8C8781', core: '#EEE7DE', streak: '#F7F4EC' },
-    tone: '#141416', toneA: 0.90, paper: 0 },
-  { ramp: ['#87A33C', '#6E8A2F', '#9DBB55', '#C9D89B', '#F2F5E6'], deep: '#1F2A10',   // FOREST / LIME
-    glow: { halo: '#4C6A16', mid: '#87A33C', core: '#DCEBAE', streak: '#F5FADF' },
-    tone: '#101A0C', toneA: 0.70, paper: 0 },
-  { ramp: ['#0051FF', '#2A6CFF', '#6EA3FF', '#C4DDFF', '#F4F9FF'], deep: '#031338',   // INK / ICE
-    glow: { halo: '#0030B8', mid: '#0051FF', core: '#E8F3FF', streak: '#FFFFFF' },
-    tone: '#071026', toneA: 0.75, paper: 0 },
-  { ramp: P2_COL.ramp, deep: P2_COL.deep, glow: P2_COL.glow, tone: '#f5f4f0', toneA: 0.0, paper: 1 },  // giấy: hoa vẫn xanh như ảnh tham chiếu
-];
+// (Bảng màu P2_COL / PALETTES / THEMES đã tách sang src/palette.js)
 // Ánh sáng có hướng: ảnh B sáng dần về phía trên-phải (~43° theo hồi quy độ sáng), tối dần về dưới-trái.
 const LIGHT = { angle: 43, tone: 0.25, hi: 0.18, alpha: 0.2 };  // góc (độ); độ ngả tông đậm; độ sáng thêm; chênh độ đậm nét
 const SPRING = { k: 6, c: 2.2 };  // lò xo hơi dưới tắt dần cho dòng cuộn: có chút quá đà rồi lắng lại
@@ -161,98 +135,7 @@ function bakeGlowTexture(size) {
   tex.needsUpdate = true;
   return tex;
 }
-
-// Dust: bake đốm mềm vào sprite 1 lần — fragment chỉ còn 1 texture fetch thay vì smoothstep.
-function bakeDustSprite(size) {
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x + 0.5) / size - 0.5, dy = (y + 0.5) / size - 0.5;
-      const d = Math.hypot(dx, dy);
-      let t = Math.max(0, Math.min(1, (d - 0.5) / -0.5));
-      t = t * t * (3 - 2 * t);
-      const o = (y * size + x) * 4;
-      data[o] = data[o + 1] = data[o + 2] = 255;
-      data[o + 3] = Math.round(t * t * 255);
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.minFilter = tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-// Caustics: bake 1 tile (2.7 đơn vị sóng) bằng đúng mô hình tia khúc xạ, rồi runtime chỉ
-// sample 1 lớp UV trôi. Mirrored wrap nên mép tile không lộ mối nối.
-function bakeCausticTile(renderer, size, phase) {
-  const rt = new THREE.WebGLRenderTarget(size, size, {
-    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
-    depthBuffer: false, stencilBuffer: false,
-  });
-  rt.texture.wrapS = rt.texture.wrapT = THREE.MirroredRepeatWrapping;
-  rt.texture.generateMipmaps = false;
-
-  const bakeScene = new THREE.Scene();
-  const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const bakeMat = new THREE.ShaderMaterial({
-    uniforms: { uPhase: { value: phase || 0 } },
-    depthTest: false, depthWrite: false,
-    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: [
-      'uniform float uPhase;',
-      'varying vec2 vUv;',
-      'float H(vec2 p, float t) {',                    // trường sóng gốc: 3 sin chồng, lệch tần số
-      '  p += vec2(sin(t * 0.10), cos(t * 0.13)) * 0.15;',
-      '  return sin(p.x * 1.7 + t * 0.90) * 0.60',
-      '       + sin(p.x * 2.3 - p.y * 1.9 + t * 0.62) * 0.25',
-      '       + sin(p.y * 2.9 + t * 0.47) * 0.15;',
-      '}',
-      'vec3 refrDir(vec2 pos, float t, vec3 L) {',
-      '  float e = 0.03;',
-      '  float h  = H(pos, t);',
-      '  float hx = H(pos + vec2(e, 0.0), t);',
-      '  float hz = H(pos + vec2(0.0, e), t);',
-      '  vec3 n = normalize(vec3(-(hx - h) / e, 1.0, -(hz - h) / e));',
-      '  return refract(L, n, 0.78);',
-      '}',
-      'vec3 hit(vec2 pos, float t, vec3 L) {',
-      '  vec3 ro = vec3(pos, 0.0);',
-      '  vec3 rd = refrDir(pos, t, L);',
-      '  float T = -(ro.y + 0.5) / min(rd.y, -0.2);',
-      '  return ro + rd * T;',
-      '}',
-      'void main() {',
-      '  vec2 p = vUv * 2.7;',
-      '  float t = uPhase;',
-      '  vec3 L = normalize(vec3(0.25 * sin(t * 0.21), -1.0, 0.18 * cos(t * 0.17)));',
-      '  vec3 A = hit(p, t, L);',
-      '  vec3 B = hit(p + vec2(0.004, 0.0), t, L);',
-      '  vec3 C = hit(p + vec2(0.0, 0.004), t, L);',
-      '  float area = 0.5 * length(cross(B - A, C - A));',
-      '  float caust = clamp(3.2e-5 / (area + 6e-6), 0.0, 3.0) / 3.0;',  // lưu tuyến tính 0..1, runtime mới pow
-      '  gl_FragColor = vec4(vec3(caust), 1.0);',
-      '}',
-    ].join('\n'),
-  });
-  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bakeMat);
-  bakeScene.add(quad);
-
-  // Viewport của RenderTarget tính bằng DEVICE px. Đừng dùng renderer.setViewport(size, size): three nhân
-  // giá trị đó với pixelRatio, nên khi pixelRatio < 1 (màn > 1200p) bake chỉ phủ ~size*pr -> phần còn lại
-  // của tile là đen, mép đen đó hiện thành dải/vệt cứng trên nền giấy. Đặt thẳng rt.viewport.
-  rt.viewport.set(0, 0, size, size);
-  rt.scissor.set(0, 0, size, size);
-  const prevTarget = renderer.getRenderTarget();
-  renderer.setRenderTarget(rt);
-  renderer.setScissorTest(false);
-  renderer.render(bakeScene, bakeCam);
-  renderer.setRenderTarget(prevTarget);   // three tự trả viewport về kích thước canvas
-
-  quad.geometry.dispose(); bakeMat.dispose();
-  return rt;
-}
+// (bakeDustSprite / bakeCausticTile đã tách sang src/dust.js và src/caustics.js)
 
 // ---------- Create geometries ----------
 function createGeometries(shaders) {
@@ -467,32 +350,7 @@ async function initScene(shaders) {
     uniforms: glowU,
     vertexShader: shaders.GLOW_VERT, fragmentShader: shaders.GLOW_FRAG, transparent: true, depthWrite: false, depthTest: false }));
   glow.renderOrder = 0; group.add(glow);
-  // Caustics = quad screen-space. Tile caustic đã bake 1 lần lúc load; runtime chỉ sample 2 lớp UV trôi,
-  // nhân uDay/uEnergy. Gắn thẳng camera, ghi thẳng clip-space nên không tốn matrix.
-  const cauRT = bakeCausticTile(renderer, 1024, 8.5);
-  const cauU = { uDay: { value: 0 }, uTime: U.uTime, uEnergy: U.uEnergy,
-                 uRes: { value: new THREE.Vector2(1, 1) }, uTex: { value: cauRT.texture } };
-  const caustics = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-    uniforms: cauU, transparent: true, depthWrite: false, depthTest: false,
-    vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.9999, 1.0); }',
-    // 1 lớp tile trôi chậm; mật độ sóng quy đổi như bản ray-marching cũ.
-    fragmentShader: [
-      'uniform sampler2D uTex;',
-      'uniform float uTime, uDay, uEnergy;',
-      'uniform vec2 uRes;',
-      'void main(){',
-      '  if (uDay < 0.01) { gl_FragColor = vec4(0.0); return; }',
-      '  vec2 s = gl_FragCoord.xy / uRes.y * (1.35 / 2.7);',  // toạ độ tile: mật độ sóng đều mọi tỉ lệ màn hình
-      '  vec2 a = s + vec2(0.22, 0.22) + vec2(uTime * 0.018, uTime * 0.012);',
-      '  float c = texture2D(uTex, a).r;',
-      '  float raw = min(c * 3.0, 3.0);',
-      '  float caust = raw * sqrt(raw);',                          // raw^1.5, rẻ hơn pow
-      '  gl_FragColor = vec4(vec3(0.0, 0.318, 1.0), caust * uDay * (0.10 + 0.10 * uEnergy));',
-      '}',
-    ].join('\n'),
-  }));
-  caustics.frustumCulled = false; caustics.renderOrder = -1;      // vẽ TRƯỚC hoa: gợn ở dưới cánh, cánh đè lên
-  scene.add(camera); camera.add(caustics);                        // cần camera trong scene để child active
+  const { caustics, cauU, cauRT } = createCaustics({ renderer, scene, camera, U });
   // Bảng màu 6 section parse sẵn sang THREE.Color (không cấp phát trong vòng lặp)
   const TH = THEMES.map((t) => ({
     ramp: t.ramp.map((h) => new THREE.Color(h)),
@@ -501,58 +359,7 @@ async function initScene(shaders) {
   }));
   [[new THREE.Mesh(G.fill, mat(0.05)), 1], [new THREE.LineSegments(G.lines, mat(0.20)), 2], [new THREE.LineSegments(G.rim, mat(0.62)), 3]]
     .forEach(([o, ro]) => { o.frustumCulled = false; o.renderOrder = ro; group.add(o); });
-  // BỤI NƯỚC XA — bề mặt WebGL độc lập (THREE.Points) nằm SAU hoa ở z âm: tầng depth thật duy nhất
-  // còn thiếu trong danh sách. Không gắn vào group (group xoay/spin) — bụi là không gian nền, đứng yên
-  // trong thế giới, chỉ trôi lên chậm theo scroll (DUST.driftK) và tan dần khi giấy trắng (sec5) lên.
-  const DUST = { n: 80, spread: 1200, zMin: -520, zMax: -170, k: 5000, opacity: 0.55, driftK: 0.08 };
-  const dustGeo = new THREE.BufferGeometry();
-  {
-    const dp = new Float32Array(DUST.n * 3), ds = new Float32Array(DUST.n);
-    let sd = 20261025;                                  // LCG cố định: bố cục bụi giống nhau mỗi lần load
-    const rnd = () => (sd = (sd * 1103515245 + 12345) % 2147483648) / 2147483648;
-    for (let i = 0; i < DUST.n; i++) {
-      dp[i * 3] = (rnd() - 0.5) * DUST.spread;
-      dp[i * 3 + 1] = (rnd() - 0.5) * DUST.spread * 0.75;
-      dp[i * 3 + 2] = DUST.zMin + rnd() * (DUST.zMax - DUST.zMin);
-      ds[i] = 1.0 + rnd() * 1.2;                        // cỡ nốt: 1.0..2.2 -> 4..9px CSS tuỳ khoảng cách
-    }
-    dustGeo.setAttribute('position', new THREE.BufferAttribute(dp, 3));
-    dustGeo.setAttribute('aSize', new THREE.BufferAttribute(ds, 1));
-  }
-  const dustSprite = bakeDustSprite(64);              // đốm bụi bake 1 lần: fragment chỉ còn 1 texture fetch
-  const dustU = { uTime: U.uTime, uDrift: { value: 0 }, uOpacity: { value: DUST.opacity },
-                  uPixel: { value: 1 }, uK: { value: DUST.k }, uSpreadX: { value: 1 },
-                  uColor: U.uC4, uSprite: { value: dustSprite } };   // màu bụi theo bảng màu hoa
-  const dust = new THREE.Points(dustGeo, new THREE.ShaderMaterial({
-    uniforms: dustU, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
-    vertexShader: [
-      'uniform float uTime, uDrift, uPixel, uK, uSpreadX;',
-      'attribute float aSize;',
-      'varying float vA;',
-      'void main(){',
-      '  vec3 p = position;',
-      '  p.x *= uSpreadX;',                                // màn hẹp: nén bề ngang để mật độ bụi không thưa
-      '  float ph = aSize * 7.31;',                       // pha riêng từng nốt: không nốt nào trôi giống nốt nào
-      '  float t = uTime * (0.10 + 0.06 * aSize);',
-      '  p.x += sin(t + ph) * 16.0;',
-      '  p.y += cos(t * 0.83 + ph) * 12.0 + uDrift;',     // + uDrift: trôi LÊN chậm hơn trang -> tầng xa
-      '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
-      '  gl_PointSize = clamp(aSize * uPixel * uK / max(1.0, -mv.z), 1.0, 20.0);',  // xa -> nhỏ (depth thật)
-      '  gl_Position = projectionMatrix * mv;',
-      '  vA = 0.35 + 0.65 * (0.5 + 0.5 * sin(t * 2.3 + ph * 2.0));',  // lấp lánh chậm, lệch pha
-      '}',
-    ].join('\n'),
-    fragmentShader: [
-      'uniform vec3 uColor; uniform float uOpacity; uniform sampler2D uSprite;',
-      'varying float vA;',
-      'void main(){',
-      '  float a = texture2D(uSprite, gl_PointCoord).a;',  // đốm mềm đã bake vào sprite
-      '  gl_FragColor = vec4(uColor, a * vA * uOpacity);',
-      '}',
-    ].join('\n'),
-  }));
-  dust.frustumCulled = false;
-  dust.renderOrder = -0.5; scene.add(dust);   // vẽ trước cả glow: quầng sáng phủ lên bụi như sương
+  const { dust, dustU, dustSprite, DUST } = createDust({ scene, U });
 
   // ---- BỤI INTRO: một đợt nốt nước bay lên đúng lúc curtain mở (P(-1) -> P0) ----
   // Dùng lại sprite đã bake. 140 nốt additive trải z -260..+60 nên có nốt đi TRƯỚC hoa, có nốt sau,
