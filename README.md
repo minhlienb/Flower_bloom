@@ -1,10 +1,10 @@
 # Fleur — Real-time 3D Web Portfolio
 
-**Minh Liên** — 3D web / frontend engineer · Ho Chi Minh City, Vietnam (Relocating)
+**Minh Liên** — 3D web / frontend engineer · Đà Lạt, Vietnam
 
 **Live: <https://minhlienb.vercel.app>**
 
-A single-page portfolio: an 18-petal flower built with hand-written Three.js and custom GLSL, all motion driven by scroll, every number measured on device — not guessed.
+A single-page portfolio: an 18-petal flower built with Three.js and custom GLSL shaders, all motion driven by scroll, every number measured on device — not guessed.
 
 ## Measured highlights
 
