@@ -53,6 +53,10 @@
   <script>
     // Loader tự chạy tiến trình khi main.js chưa tới; main.js báo mốc thật qua window.__load(v).
     (function () {
+      // Reload = xem lại từ đầu: intro hoa là màn mở chính, không khôi phục vị trí cuộn cũ
+      // (khôi phục giữa trang sẽ lệch pha: chữ đã ở section giữa, hoa vẫn chạy intro P1, màu nhảy theme).
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+      scrollTo(0, 0);
       var de = document.documentElement, fill = document.getElementById('loader-fill');
       var pct = document.getElementById('loader-pct');
       de.classList.add('is-loading');
