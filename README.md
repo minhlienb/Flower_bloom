@@ -5,6 +5,7 @@
 **Live: <https://minhlienb.vercel.app>**
 
 A single-page portfolio: an 18-petal flower built with Three.js and custom GLSL shaders, all motion driven by scroll, every number measured on device — not guessed.
+Built with an AI-first workflow: the direction, the decisions and every number are human-owned.
 
 ## Measured highlights
 
