@@ -19,7 +19,8 @@ html.is-loading{overflow:hidden}   /* chỉ khoá cuộn, không đổi scrollHe
   transition:opacity .4s ease,transform .7s cubic-bezier(.76,0,.24,1)}
 .loader.is-done .loader-inner{opacity:0;transform:translateY(-18px)}
 .loader-mark{margin:0;font-family:'Cormorant Garamond',var(--sys-serif);font-style:italic;font-weight:400;
-  font-size:clamp(72px,12vw,168px);line-height:.9;letter-spacing:-.025em;color:var(--ink)}
+  font-size:clamp(44px,9.6vw,132px);line-height:.9;letter-spacing:-.025em;color:var(--ink);
+  white-space:nowrap}
 .loader-sub{margin:-2px 0 0;font:300 10px/1 Inter,var(--sys-sans);letter-spacing:.42em;
   text-transform:lowercase;color:color-mix(in srgb,var(--ink) 46%,transparent)}
 .loader-bar{position:relative;width:min(220px,44vw);height:1px;margin-top:10px;
