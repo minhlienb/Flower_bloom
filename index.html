@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   Minh Liên — 3D web / frontend engineer portfolio.
-  Three.js r128 + custom vertex/fragment GLSL: 18 instanced petals,
+  Hand-written Three.js r128 + custom vertex/fragment GLSL: 18 instanced petals,
   115,670 triangles, 5 draw calls per frame, all motion driven by scroll.
   Source licence: PolyForm Noncommercial 1.0.0 — commercial use requires permission.
   See LICENSE and THIRD-PARTY-NOTICES.md in the repository.
@@ -14,7 +14,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="author" content="Bùi Minh Liên">
-  <meta name="description" content="3D web / frontend engineer portfolio — Three.js, custom GLSL, instancing, measured performance.">
+  <meta name="description" content="Software engineer, AI-assisted frontend — real-time 3D on the web, measured before decided. Ho Chi Minh City, relocating.">
   <meta name="license" content="PolyForm Noncommercial 1.0.0">
   <link rel="license" href="LICENSE">
   <title>Minh Liên — 3D Web / Frontend Engineer</title>
@@ -32,7 +32,6 @@
       var b = 'font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;color:#9aa7c7';
       console.log('%cFleur — a 3D web study, by Minh Liên', h);
       console.log('%cThree.js r128 · custom GLSL · 18 instanced petals · 5 draw calls per frame · every number measured, not guessed\n'
-        + 'AI-assisted code, human-owned decisions — direction, motion and performance targets chosen from measured options, not guessed\n'
         + 'Source © 2026 Bùi Minh Liên — PolyForm Noncommercial 1.0.0 · no commercial use without permission\n'
         + 'Third-party: three.js MIT · GSAP + ScrollTrigger GreenSock Standard License · Lenis MIT · fonts SIL OFL 1.1\n'
         + 'minhlien2077@gmail.com · github.com/minhlienb', b);
@@ -54,10 +53,6 @@
   <script>
     // Loader tự chạy tiến trình khi main.js chưa tới; main.js báo mốc thật qua window.__load(v).
     (function () {
-      // Reload = xem lại từ đầu: intro hoa là màn mở chính, không khôi phục vị trí cuộn cũ
-      // (khôi phục giữa trang sẽ lệch pha: chữ đã ở section giữa, hoa vẫn chạy intro P1, màu nhảy theme).
-      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-      scrollTo(0, 0);
       var de = document.documentElement, fill = document.getElementById('loader-fill');
       var pct = document.getElementById('loader-pct');
       de.classList.add('is-loading');
@@ -125,42 +120,47 @@
     <section class="sec">
       <p class="secno">01</p>
       <h2 class="sectitle">Minh Liên</h2>
-      <blockquote class="verse">AI-first frontend engineer —<br>real-time 3D on the web, every number measured, not guessed
-        <cite>Bùi Minh Liên — Software Engineer · Đà Lạt → Ho Chi Minh City</cite>
+      <blockquote class="verse">Software engineer, AI-assisted frontend —<br>real-time 3D on the web, measured before decided
+        <cite>Bùi Minh Liên — Software Engineer · Đà Lạt → Ho Chi Minh City (relocating)</cite>
       </blockquote>
     </section>
     <section class="sec">
       <p class="secno">02</p>
       <h2 class="sectitle">About</h2>
-      <blockquote class="verse">1.5 years shipping web systems for the Japanese market —<br>Laravel, FastAPI, React. I own features end to end: spec, edge cases, tests.
-        <cite>Cloud Nine Solutions · 2025 — now · B.Sc Software Engineering</cite>
+      <blockquote class="verse">About 1.5 years building web systems for Japanese clients —<br>Laravel, FastAPI, React.<br>
+        I work on features from spec to tests, and I use AI to draft code, then verify it.
+        <cite>Cloud Nine Solutions · 2025 — now · B.Eng. Software Engineering, Dalat University</cite>
       </blockquote>
     </section>
     <section class="sec">
       <p class="secno">03</p>
       <h2 class="sectitle">Work</h2>
-      <blockquote class="verse">Insurance portal in React; batch pipelines in FastAPI<br>with change-detect and race lock — 50 test cases before anything ships
-        <cite>React · FastAPI · Laravel · MariaDB · Docker</cite>
+      <blockquote class="verse">A React registration portal with Japanese input handling, and a Python batch pipeline<br>
+        with a race lock and change detection.
+        <cite>React · Laravel · FastAPI · MariaDB · Docker</cite>
       </blockquote>
     </section>
     <section class="sec">
       <p class="secno">04</p>
       <h2 class="sectitle">Craft</h2>
-      <blockquote class="verse">This flower: 18 instanced petals, 5 draw calls a frame, one spring —<br>I set the look and the frame budget; the HUD on screen proves it
-        <cite>Three.js · GLSL · AI-FIRST · MEASURED</cite>
+      <blockquote class="verse">Fleur: 18 instanced petals, 5 draw calls a frame, spring physics.<br>
+        I chose the look and the performance targets; an on-page HUD shows the frame timing.
+        <cite>Three.js · GLSL · measured · AI-assisted</cite>
       </blockquote>
     </section>
     <section class="sec">
       <p class="secno">05</p>
       <h2 class="sectitle">Stack</h2>
-      <blockquote class="verse">TypeScript, React and Three.js day to day;<br>Laravel and FastAPI behind them — AI drafts, I verify, measure and own
+      <blockquote class="verse">TypeScript (learning), React and Three.js in my projects;<br>
+        Laravel, FastAPI and PHP for the client work.
         <cite>TypeScript · React · Three.js · GLSL · Python · PHP · Docker</cite>
       </blockquote>
     </section>
     <section class="sec">
       <p class="secno">06</p>
       <h2 class="sectitle">Contact</h2>
-      <blockquote class="verse">Open to frontend and 3D web teams —<br>Ho Chi Minh City, relocating. minhlien2077@gmail.com
+      <blockquote class="verse">Open to frontend and 3D web teams — Ho Chi Minh City, relocating.<br>
+        minhlien2077@gmail.com
         <cite>github.com/minhlienb · CV on request</cite>
       </blockquote>
     </section>
@@ -177,6 +177,6 @@
   <script src="lib/gsap.min.js"></script>
   <script src="lib/ScrollTrigger.min.js"></script>
   <script src="lib/lenis.min.js"></script>
-  <script type="module" src="main.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>
